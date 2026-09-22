@@ -131,6 +131,8 @@ pub struct AccountStore {
     pub accounts: Vec<Account>,
     pub selected_id: String,
     pub mode: String, // "offline" | "online"
+    #[serde(default)]
+    pub offline_username: String,
 }
 
 impl AccountStore {
@@ -144,6 +146,7 @@ impl AccountStore {
             accounts: Vec::new(),
             selected_id: String::new(),
             mode: "offline".to_string(),
+            offline_username: String::new(),
         }
     }
 
@@ -194,6 +197,28 @@ impl AccountStore {
                 self.mode = "offline".to_string();
             }
         }
+    }
+}
+
+/// Cuenta "No premium": sesión offline con un nombre local y sin tokens de
+/// Microsoft. La UUID se deriva del nombre (determinista, patrón habitual en
+/// launchers) y el token queda vacío para que el cliente entre en modo legacy.
+pub fn offline_account(username: &str) -> Account {
+    let hash = crate::downloader::sha256_bytes(username.trim().as_bytes());
+    let hex: String = hash.chars().take(32).collect();
+    let uuid = format!(
+        "{}-{}-{}-{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    );
+    Account {
+        id: uuid,
+        name: username.trim().to_string(),
+        access_token: String::new(),
+        refresh_token: String::new(),
     }
 }
 

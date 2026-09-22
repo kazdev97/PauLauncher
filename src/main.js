@@ -9,7 +9,7 @@ const status = (id, msg) => { $(id).textContent = msg || ""; };
 // ---------------------------------------------------------------------------
 // Datos y stubs del modo demo
 // ---------------------------------------------------------------------------
-const demoStore = { accounts: [{ id: "a1b2c3", name: "elusuario_de_prueba" }], selected_id: "a1b2c3", mode: "online" };
+const demoStore = { accounts: [], selected_id: "", mode: "offline", offline_username: "Soy_Kaz" };
 const demoInstances = [
   { name: "Vanilla 1.21.4", version_id: "1.21.4", loader: "vanilla", game_version: "1.21.4", loader_version: "", source: "local", manifest_url: "", manifest_type: "", server_version: "", actualizacion: true, installed: true, instance_dir: "C:\\Documentos\\PauLauncher\\instancias\\Vanilla 1.21.4", last_launched: "2026-09-14 18:00", session_based: false, remote: false },
   { name: "Server de Kaz", version_id: "1.21.4-fabric-0.16.14", loader: "fabric", game_version: "1.21.4", loader_version: "0.16.14", source: "remote", manifest_url: "https://drive.google.com/uc?export=download&id=abc123", manifest_type: "pau", server_version: "2026-09-13", actualizacion: true, installed: true, instance_dir: "C:\\Documentos\\PauLauncher\\instancias\\Server de Kaz", last_launched: "2026-09-13 21:30", session_based: false, remote: true },
@@ -35,6 +35,9 @@ const demoSyncResult = { applied_revision: "20260914T120000Z", replaced: ["mods/
 function demoCall(cmd) {
   const map = {
     login_get_state: () => demoStore,
+    login_set_offline: () => undefined,
+    login_set_selected: () => undefined,
+    login_remove_account: () => undefined,
     instances_list: () => demoInstances,
     java_get_bundled: () => demoJava.filter((j) => j.path.toLowerCase().includes("runtime")),
     java_get_system: () => demoJava.filter((j) => !j.path.toLowerCase().includes("runtime")),
@@ -100,6 +103,23 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
 async function refreshLogin() {
   try {
     const store = await call("login_get_state", {});
+    const offlineName = (store.mode === "offline" && (store.offline_username || "").trim())
+      || "";
+    const offlineToggle = $("offline-mode");
+    if (offlineToggle) offlineToggle.checked = !!offlineName;
+    if (offlineName) $("offline-username").value = store.offline_username;
+
+    if (offlineName) {
+      // Modo No premium activo: nombre local, sin skins de sesión
+      $("nav-user").textContent = offlineName + " (no premium)";
+      const navAvatar = $("nav-user-avatar");
+      if (navAvatar) navAvatar.classList.add("hidden");
+      $("login-box").classList.remove("hidden");
+      $("login-ok").classList.add("hidden");
+      status("login-status", "");
+      return;
+    }
+
     if (store.accounts && store.accounts.length > 0) {
       const sel = store.accounts.find((a) => a.id === store.selected_id) || store.accounts[0];
       const username = sel.name || sel.id;
@@ -178,6 +198,47 @@ $("btn-logout").addEventListener("click", async () => {
     if (store.selected_id) await call("login_remove_account", { accountId: store.selected_id });
     refreshLogin();
   } catch (e) { status("login-status", e.message); }
+});
+
+// ---------- MODO NO PREMIUM (OFFLINE) ----------
+$("btn-save-offline").addEventListener("click", async () => {
+  const name = $("offline-username").value.trim();
+  if (!name) { status("offline-status", "Escribe un nombre de usuario."); return; }
+  try {
+    await call("login_set_offline", { username: name });
+    status("offline-status", `Modo No premium activo como '${name}'.`);
+    refreshLogin();
+  } catch (e) { status("offline-status", e.message); }
+});
+
+$("offline-mode").addEventListener("change", async () => {
+  if ($("offline-mode").checked) {
+    const name = $("offline-username").value.trim();
+    if (!name) {
+      $("offline-mode").checked = false;
+      status("offline-status", "Escribe un nombre de usuario primero.");
+      return;
+    }
+    try {
+      await call("login_set_offline", { username: name });
+      status("offline-status", "Modo No premium activado.");
+      refreshLogin();
+    } catch (e) {
+      $("offline-mode").checked = false;
+      status("offline-status", e.message);
+    }
+  } else {
+    try {
+      const store = await call("login_get_state", {});
+      if (store.accounts && store.accounts.length > 0) {
+        await call("login_set_selected", { accountId: store.accounts[0].id });
+        status("offline-status", "Cuenta de Microsoft seleccionada.");
+      } else {
+        status("offline-status", "No hay cuentas premium guardadas. Inicia sesión con Microsoft.");
+      }
+      refreshLogin();
+    } catch (e) { status("offline-status", e.message); }
+  }
 });
 
 // ---------- INSTANCIAS ----------

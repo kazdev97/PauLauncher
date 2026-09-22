@@ -52,6 +52,20 @@ fn login_remove_account(account_id: String) -> Result<(), String> {
     config::remove_account(&account_id)
 }
 
+/// Activa el modo No premium guardando un usuario local (offline).
+#[tauri::command]
+fn login_set_offline(username: String) -> Result<(), String> {
+    let name = username.trim().to_string();
+    if name.is_empty() {
+        return Err("Escribe un nombre de usuario para el modo No premium.".to_string());
+    }
+    let mut store = AccountStore::load();
+    store.offline_username = name;
+    store.selected_id = String::new();
+    store.mode = "offline".to_string();
+    store.save()
+}
+
 // -- Java --
 /// Resuelve el Java que necesita la versión de la instancia usando el JSON de
 /// Mojang (o heuristic). Prefiere el descargado o el del sistema y si ninguno
@@ -363,10 +377,14 @@ async fn launch_game(
     java_path: String,
 ) -> Result<u32, String> {
     let store = config::AccountStore::load();
-    let account = store
-        .selected()
-        .cloned()
-        .ok_or_else(|| "No hay una cuenta seleccionada".to_string())?;
+    let account = if store.mode == "offline" && !store.offline_username.trim().is_empty() {
+        config::offline_account(&store.offline_username)
+    } else {
+        store.selected().cloned().ok_or_else(|| {
+            "No hay una cuenta seleccionada (inicia sesión con Microsoft o activa el modo No premium con un nombre de usuario)."
+                .to_string()
+        })?
+    };
     launch::launch_minecraft(app, &name, &java_path, account)
 }
 
@@ -416,6 +434,7 @@ pub fn run() {
             login_get_account,
             login_set_selected,
             login_remove_account,
+            login_set_offline,
             // java
             java_get_required,
             java_resolve,

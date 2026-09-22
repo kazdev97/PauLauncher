@@ -379,7 +379,13 @@ fn build_launch_command(
         *arg = arg.replace("${auth_uuid}", &account.id.replace('-', ""));
         *arg = arg.replace("${auth_access_token}", &account.access_token);
         *arg = arg.replace("${user_properties}", "{}");
-        *arg = arg.replace("${user_type}", "msa");
+        // Sin token = sesión offline (legacy); con token = cuenta Microsoft (msa)
+        let user_type = if account.access_token.is_empty() {
+            "legacy"
+        } else {
+            "msa"
+        };
+        *arg = arg.replace("${user_type}", user_type);
         *arg = arg.replace("${version_type}", "release");
         *arg = arg.replace("${game_directory}", &game_dir);
         *arg = arg.replace("${assets_root}", &assets_root);

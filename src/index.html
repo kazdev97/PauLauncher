@@ -83,6 +83,18 @@
             </div>
           </div>
         </div>
+        <div class="card glass">
+          <h2>Modo No premium</h2>
+          <p class="muted">Juega sin cuenta de Microsoft (offline) usando un nombre de usuario local.</p>
+          <label class="check"><input type="checkbox" id="offline-mode" /> Activar modo No premium</label>
+          <div class="form-grid">
+            <label>Nombre de usuario
+              <input id="offline-username" placeholder="Ej. Soy_Kaz" maxlength="16" />
+            </label>
+          </div>
+          <button class="btn primary" id="btn-save-offline">Guardar y usar modo No premium</button>
+          <p id="offline-status" class="status"></p>
+        </div>
         <p id="login-status" class="status"></p>
       </section>
 
