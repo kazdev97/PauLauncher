@@ -919,6 +919,35 @@ fn sync_raw_url(ctx: &GitCtx, rel: &str) -> String {
     format!("{}/{}", base, rel.replace('\\', "/").replace(' ', "%20"))
 }
 
+/// GitHub sirve los objetos LFS desde el host media (raw devuelve el puntero
+/// de texto). URL equivalente al raw para archivos guardados en Git LFS.
+fn lfs_media_url(ctx: &GitCtx, rel: &str) -> String {
+    let base = format!(
+        "https://media.githubusercontent.com/media/{}/{}/{}",
+        ctx.repo,
+        ctx.branch,
+        ctx.path.trim_matches('/')
+    );
+    let base = base.trim_end_matches('/');
+    format!("{}/{}", base, rel.replace('\\', "/").replace(' ', "%20"))
+}
+
+const LFS_POINTER_MAGIC: &[u8] = b"version https://git-lfs.github.com/spec/v1";
+
+/// True si el archivo empieza por la cabecera de puntero de Git LFS
+/// (es decir, raw.githubusercontent devolvió el puntero y no el contenido).
+fn is_lfs_pointer(path: &Path) -> bool {
+    use std::io::Read;
+    let Ok(mut f) = fs::File::open(path) else {
+        return false;
+    };
+    let mut buf = vec![0u8; LFS_POINTER_MAGIC.len()];
+    let Ok(n) = f.read(&mut buf) else {
+        return false;
+    };
+    n == LFS_POINTER_MAGIC.len() && &buf == LFS_POINTER_MAGIC
+}
+
 async fn git_api_get(url: &str) -> Result<serde_json::Value, String> {
     let client = http_client();
     crate::downloader::get_json::<serde_json::Value>(&client, url, Duration::from_secs(30))
@@ -1145,7 +1174,24 @@ pub async fn git_apply_dir(
         on_status(format!("Descargando {rel}..."));
         match crate::downloader::download_file(&client, &url, &dest, &mut |_, _| {}).await {
             Ok(()) => {
-                if is_replace { replaced.push(rel.clone()) } else { downloaded.push(rel.clone()) }
+                if is_lfs_pointer(&dest) {
+                    // raw devuelve el puntero Git LFS: bajar el contenido real de media.
+                    let media = lfs_media_url(&ctx, rel);
+                    match crate::downloader::download_file(&client, &media, &dest, &mut |_, _| {}).await {
+                        Ok(()) => {
+                            if is_replace {
+                                replaced.push(rel.clone())
+                            } else {
+                                downloaded.push(rel.clone())
+                            }
+                        }
+                        Err(e) => errors.push(format!("{rel}: {e}")),
+                    }
+                } else if is_replace {
+                    replaced.push(rel.clone())
+                } else {
+                    downloaded.push(rel.clone())
+                }
             }
             Err(e) => errors.push(format!("{rel}: {e}")),
         }
