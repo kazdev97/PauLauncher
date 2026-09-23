@@ -318,19 +318,20 @@ function renderAvailable(list) {
       </div>
       <div class="actions">
         ${item.installed
-          ? '<button class="btn ghost small" disabled>Instalada</button>'
+          ? '<button class="btn ghost small" disabled>instalado</button>'
           : '<button class="btn mint small" data-install>Instalar</button>'}
       </div>`;
     const btn = card.querySelector("[data-install]");
-    if (btn) btn.addEventListener("click", () => installFromSource(item));
+    if (btn) btn.addEventListener("click", () => installFromSource(item, btn));
     el.appendChild(card);
   });
 }
 
-async function installFromSource(item) {
+async function installFromSource(item, btn) {
   if (DEMO) return installFromSourceDemo(item);
   status("instances-status", `Instalando '${item.name}' desde el source...`);
   setInstallProgress(1, `Instalando '${item.name}'...`);
+  if (btn) { btn.disabled = true; btn.textContent = "Instalando…"; }
   try {
     await call("source_install", {
       name: item.name,
@@ -347,6 +348,7 @@ async function installFromSource(item) {
     loadInstances();
   } catch (e) {
     hideInstallProgress();
+    if (btn) { btn.disabled = false; btn.textContent = "Instalar"; }
     status("instances-status", "Error instalando: " + e.message);
   }
 }

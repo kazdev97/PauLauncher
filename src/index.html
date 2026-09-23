@@ -85,8 +85,12 @@
         </div>
         <div class="card glass">
           <h2>Modo No premium</h2>
-          <p class="muted">Juega sin cuenta de Microsoft (offline) usando un nombre de usuario local.</p>
-          <label class="check"><input type="checkbox" id="offline-mode" /> Activar modo No premium</label>
+          <p class="muted">Juega sin cuenta de Microsoft (No-Premium).</p>
+          <label class="switch">
+            <input type="checkbox" id="offline-mode" />
+            <span class="switch-track"><span class="switch-knob"></span></span>
+            <span>Activar modo No premium</span>
+          </label>
           <div class="form-grid">
             <label>Nombre de usuario
               <input id="offline-username" placeholder="Ej. Soy_Kaz" maxlength="16" />
@@ -138,7 +142,11 @@
             <input type="range" id="ram-slider" min="1" max="64" step="1" />
             <span id="ram-value" class="ram-value">—</span>
           </div>
-          <label class="check"><input type="checkbox" id="ram-auto" checked /> Auto (usar la recomendación del manifest / nº de mods)</label>
+          <label class="switch">
+            <input type="checkbox" id="ram-auto" checked />
+            <span class="switch-track"><span class="switch-knob"></span></span>
+            <span>Auto (usar la recomendación del manifest / nº de mods)</span>
+          </label>
           <p id="ram-feedback" class="ram-feedback">—</p>
         </div>
 
@@ -146,8 +154,16 @@
           <label>Java manual (opcional — si lo dejas vacío, el launcher detecta y descarga el que pide tu versión)
             <input id="set-java" placeholder="C:\...\bin\java.exe" />
           </label>
-          <label class="check"><input type="checkbox" id="set-streamer" /> Modo streamer</label>
-          <label class="check"><input type="checkbox" id="set-auto" /> Actualizar automáticamente (al abrir y antes de jugar)</label>
+          <label class="switch">
+            <input type="checkbox" id="set-streamer" />
+            <span class="switch-track"><span class="switch-knob"></span></span>
+            <span>Modo streamer</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="set-auto" />
+            <span class="switch-track"><span class="switch-knob"></span></span>
+            <span>Actualizar automáticamente (al abrir y antes de jugar)</span>
+          </label>
           <button class="btn primary" id="btn-save-settings">Guardar</button>
         </div>
 

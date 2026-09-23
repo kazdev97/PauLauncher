@@ -300,11 +300,20 @@ async fn source_fetch(url: Option<String>) -> Result<Vec<sync::SourceInstance>, 
         .map(|i| i.name)
         .collect();
     let mut list = sync::fetch_source_index(&url).await?;
+    // El nombre instalado (carpeta) puede diferir del del índice ("a b" vs
+    // "a_b"): comparamos normalizando (minúsculas, solo alfanuméricos).
+    let normalize = |s: &str| -> String {
+        s.to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect()
+    };
     for s in list.iter_mut() {
         if s.manifest_url.trim().is_empty() && s.github_repo.trim().is_empty() {
             s.manifest_url = url.clone();
         }
-        s.installed = installed.contains(&s.name);
+        let key = normalize(&s.name);
+        s.installed = installed.iter().any(|n| normalize(n) == key);
     }
     Ok(list)
 }
