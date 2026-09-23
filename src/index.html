@@ -73,10 +73,11 @@
                   </div>
                   <div class="account-info-item">
                     <span class="muted">Estado:</span>
-                    <span class="account-status-online">● Conectado a Mojang</span>
+                    <span id="account-status" class="account-status-online">● Conectado a Microsoft</span>
                   </div>
                 </div>
                 <div class="account-actions">
+                  <button class="btn relogin hidden" id="btn-relogin">Relogin</button>
                   <button class="btn danger" id="btn-logout">Cerrar sesión</button>
                 </div>
               </div>
@@ -209,6 +210,8 @@
           <div class="row">
             <button class="btn primary" id="btn-launch">Jugar</button>
             <button class="btn danger" id="btn-kill">Detener</button>
+            <button class="btn" id="btn-copy-console">Copiar consola</button>
+            <button class="btn" id="btn-clear-console">Limpiar</button>
             <span id="game-state" class="status"></span>
           </div>
         </div>

@@ -387,14 +387,43 @@ async fn launch_game(
     name: String,
     java_path: String,
 ) -> Result<u32, String> {
-    let store = config::AccountStore::load();
+    let mut store = config::AccountStore::load();
     let account = if store.mode == "offline" && !store.offline_username.trim().is_empty() {
         config::offline_account(&store.offline_username)
     } else {
-        store.selected().cloned().ok_or_else(|| {
+        let mut selected = store.selected().cloned().ok_or_else(|| {
             "No hay una cuenta seleccionada (inicia sesión con Microsoft o activa el modo No premium con un nombre de usuario)."
                 .to_string()
-        })?
+        })?;
+        // Renovar el token antes de lanzar (igual que KazLauncher): el access_token
+        // de Minecraft caduca a las 24 h. Si el refresh falla por token revocado,
+        // la cuenta se invalida y se impide el lanzamiento hasta re-logear.
+        if !selected.refresh_token.is_empty() {
+            match auth::refresh_token(crate::auth::CLIENT_ID, &selected.refresh_token).await {
+                Ok((fresh, _)) => {
+                    selected = fresh.clone();
+                    store.upsert(fresh);
+                    let _ = store.save();
+                }
+                Err(e) => {
+                    if e.contains("invalid_grant") {
+                        // MSA caducado/revocado: se marca la cuenta para que la
+                        // UI muestre "Sesión cerrada" + botón Relogin.
+                        selected.needs_relogin = true;
+                        store.upsert(selected.clone());
+                        let _ = store.save();
+                        return Err(
+                            "Tu sesión de Microsoft caducó. Vuelve a iniciar sesión con Relogin en la pestaña Cuenta."
+                                .to_string(),
+                        );
+                    }
+                    return Err(format!(
+                        "No se pudo renovar tu sesión de Microsoft: {e}. Inténtalo de nuevo o usa Relogin en la pestaña Cuenta."
+                    ));
+                }
+            }
+        }
+        selected
     };
     launch::launch_minecraft(app, &name, &java_path, account)
 }

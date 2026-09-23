@@ -70,11 +70,49 @@ const demoEvent = {
   listen: (_name, _cb) => Promise.resolve(() => {}),
 };
 
+const consoleBuf = [];
+const CONSOLE_MAX_LINES = 4000;
+
 function appendLog(line, stream) {
   const pre = $("console");
-  pre.textContent += (stream === "stderr" ? "[err] " : "") + line + "\n";
-  pre.scrollTop = pre.scrollHeight;
+  // Solo auto-scroll si ya estábamos abajo: si el usuario está seleccionando
+  // texto, no lo arrastramos con cada línea nueva.
+  const wasAtBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24;
+  consoleBuf.push((stream === "stderr" ? "[err] " : "") + line);
+  if (consoleBuf.length > CONSOLE_MAX_LINES) {
+    consoleBuf.splice(0, consoleBuf.length - Math.floor(CONSOLE_MAX_LINES / 2));
+  }
+  pre.textContent = consoleBuf.join("\n") + "\n";
+  if (wasAtBottom) pre.scrollTop = pre.scrollHeight;
 }
+
+function copyConsole() {
+  const text = $("console").textContent;
+  const done = () => status("game-state", "Consola copiada al portapapeles.");
+  const fallback = () => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); done(); }
+    catch (e) { status("game-state", "No se pudo copiar la consola."); }
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+$("btn-copy-console").addEventListener("click", copyConsole);
+$("btn-clear-console").addEventListener("click", () => {
+  consoleBuf.length = 0;
+  $("console").textContent = "";
+  status("game-state", "Consola limpiada.");
+});
 
 const EVENT = DEMO ? demoEvent : window.__TAURI__.event;
 
@@ -128,6 +166,23 @@ async function refreshLogin() {
 
       $("login-name").textContent = username;
       if ($("login-uuid")) $("login-uuid").textContent = uuid;
+
+      // Estado de la sesión: si el token ya no se renueva (MSA caducado/revocado),
+      // se muestra "Sesión cerrada" y se habilita el botón Relogin.
+      const needsRelogin = !!sel.needs_relogin;
+      const statusEl = $("account-status");
+      if (statusEl) {
+        statusEl.textContent = needsRelogin
+          ? "● Sesión cerrada. Vuelve a iniciar sesión."
+          : "● Conectado a Microsoft";
+        statusEl.classList.remove("account-status-online", "account-status-warning");
+        statusEl.classList.add(needsRelogin ? "account-status-warning" : "account-status-online");
+      }
+      const reloginBtn = $("btn-relogin");
+      if (reloginBtn) {
+        if (needsRelogin) reloginBtn.classList.remove("hidden");
+        else reloginBtn.classList.add("hidden");
+      }
 
       // Render de cuerpo completo 3D en la pestaña Cuenta
       const skinBody = $("login-skin-body");
@@ -190,6 +245,19 @@ $("btn-login").addEventListener("click", async () => {
     status("login-status", (e.message || e) === "__MINECRAFT_NOT_OWNED__"
       ? "Esta cuenta de Microsoft no tiene Minecraft comprado."
       : "Login cancelado o fallido: " + e.message);
+  }
+});
+
+$("btn-relogin").addEventListener("click", async () => {
+  status("login-status", "Reiniciando sesión... Complete el login en el navegador si se abre.");
+  try {
+    const acc = await call("login_start", {});
+    status("login-status", "Sesión renovada como " + (acc.name || acc.id));
+    refreshLogin();
+  } catch (e) {
+    status("login-status", (e.message || e) === "__MINECRAFT_NOT_OWNED__"
+      ? "Esta cuenta de Microsoft no tiene Minecraft comprado."
+      : "Relogin cancelado o fallido: " + e.message);
   }
 });
 
@@ -653,7 +721,7 @@ function updateRamFeedback(valueGb, auto) {
   const recMinGb = Math.max(0, Math.round((ramRec.min_mb || 0) / 1024));
   fb.style.color = "var(--menta)";
   if (auto) {
-    fb.textContent = `Auto: mínimo ${recMinGb} GB · máximo ${recMaxGb} GB (manifest del owner / nº de mods).`;
+    fb.textContent = `Auto: mínimo ${recMinGb} GB · máximo ${recMaxGb} GB (para esta instancia).`;
     return;
   }
   if (valueGb <= 1) {
@@ -833,6 +901,7 @@ async function launchInstance(inst) {
     }
   } catch (e) {
     status("game-state", "Error al lanzar: " + e.message);
+    refreshLogin();
   }
 }
 
@@ -847,6 +916,7 @@ $("btn-kill").addEventListener("click", async () => {
   catch (e) { status("game-state", e.message); }
 });
 
+consoleBuf.push("— consola vacía —");
 $("console").textContent = "— consola vacía —\n";
 EVENT.listen("launch/line", (data) => {
   appendLog(data.payload.line, data.payload.stream);

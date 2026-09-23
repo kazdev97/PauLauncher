@@ -614,6 +614,22 @@ body.dark .account-type-badge {
 body.dark .account-status-online {
   color: #2ecc71;
 }
+.account-status-warning {
+  color: #d97706;
+  font-weight: 700;
+  font-size: 12.5px;
+}
+body.dark .account-status-warning {
+  color: #fbbf24;
+}
+.btn.relogin {
+  background: linear-gradient(135deg, #f6d365, #fda085);
+  color: #3a2a00;
+}
+body.dark .btn.relogin {
+  background: linear-gradient(135deg, #f6d365, #fda085);
+  color: #3a2a00;
+}
 .account-actions {
   margin-top: 4px;
 }

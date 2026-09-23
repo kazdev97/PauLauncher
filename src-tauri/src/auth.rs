@@ -261,6 +261,7 @@ async fn fetch_minecraft_profile(msa_access_token: &str) -> Result<Account, Stri
         name: profile.name.unwrap_or_default(),
         access_token: mc_token,
         refresh_token: String::new(),
+        needs_relogin: false,
     })
 }
 

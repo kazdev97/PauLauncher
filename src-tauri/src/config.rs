@@ -130,6 +130,10 @@ pub struct Account {
     pub name: String,
     pub access_token: String,
     pub refresh_token: String,
+    /// true cuando el token ya no se puede renovar (MSA caducado/revocado):
+    /// la UI muestra "Sesión cerrada" y el botón Relogin.
+    #[serde(default)]
+    pub needs_relogin: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -225,6 +229,7 @@ pub fn offline_account(username: &str) -> Account {
         name: username.trim().to_string(),
         access_token: String::new(),
         refresh_token: String::new(),
+        needs_relogin: false,
     }
 }
 
