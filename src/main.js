@@ -95,7 +95,8 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     btn.classList.add("active");
     $("page-" + btn.dataset.page).classList.add("active");
     if (btn.dataset.page === "instances") loadSource();
-    if (btn.dataset.page === "settings") { loadSettings(); setupRam(); fillRollbackForm(); }
+    if (btn.dataset.page === "settings") { loadSettings(); setupRam(); fillRollbackForm(); loadAntilag(); }
+    call("discord_set_page", { page: btn.dataset.page }).catch(() => {});
   });
 });
 
@@ -562,7 +563,68 @@ async function loadSettings() {
     $("set-java").value = s.java_path_override || "";
     $("set-streamer").checked = !!s.streamer_mode;
     $("set-auto").checked = s.auto_update !== undefined ? !!s.auto_update : true;
+    $("set-discord-rpc").checked = s.discord_rpc_enabled !== undefined ? !!s.discord_rpc_enabled : true;
   } catch (e) { status("settings-status", e.message); }
+}
+
+// ---------- MODO ANTILAG ----------
+async function loadAntilag() {
+  try {
+    const st = await call("antilag_status", {});
+    $("antilag-enable").checked = !!st.enabled;
+    $("antilag-host").value = st.host || "";
+    const hint = $("antilag-hint");
+    hint.style.color = "";
+    if (st.installed && st.tasks_registered) {
+      hint.textContent = st.tunnel_active
+        ? "Túnel activo ahora mismo."
+        : "Listo: al jugar, la conexión al servidor sale por WARP.";
+      $("btn-antilag-install").textContent = "Reinstalar modo antilag";
+    } else if (st.installed) {
+      hint.textContent = "Faltan las tareas de administrador: pulsa Instalar y acepta el permiso.";
+    } else {
+      hint.textContent = "No instalado. Descarga un motor de ~15 MB y crea una cuenta WARP free.";
+    }
+  } catch (e) { status("antilag-status", e.message); }
+}
+
+function bindAntilag() {
+  const installBtn = $("btn-antilag-install");
+  installBtn.addEventListener("click", async () => {
+    installBtn.disabled = true;
+    installBtn.textContent = "Instalando…";
+    status("antilag-status", "Instalando modo antilag…");
+    try {
+      const st = await call("antilag_install", {});
+      status("antilag-status", st.tunnel_active
+        ? "Modo antilag instalado."
+        : "Modo antilag instalado. Actívalo con el interruptor.");
+      await loadAntilag();
+    } catch (e) {
+      status("antilag-status", e.message || String(e));
+    } finally {
+      installBtn.disabled = false;
+    }
+  });
+  $("antilag-enable").addEventListener("change", async () => {
+    try {
+      await call("antilag_set_enabled", { enabled: $("antilag-enable").checked });
+      status("antilag-status", $("antilag-enable").checked
+        ? "Activado: al jugar, la conexión al servidor saldrá por WARP."
+        : "Desactivado.");
+    } catch (e) { status("antilag-status", e.message || String(e)); }
+  });
+  let hostTimer = null;
+  $("antilag-host").addEventListener("input", (e) => {
+    clearTimeout(hostTimer);
+    const value = e.target.value.trim();
+    hostTimer = setTimeout(async () => {
+      try {
+        await call("antilag_set_host", { host: value });
+        status("antilag-status", "Dirección del servidor guardada.");
+      } catch (err) { status("antilag-status", err.message || String(err)); }
+    }, 600);
+  });
 }
 
 let ramRec = { min_mb: 1024, max_mb: 4096, total_ram_gb: 16 };
@@ -672,11 +734,20 @@ $("btn-save-settings").addEventListener("click", async () => {
       ramOverrideMb,
       sourceUrl,
       autoUpdate: $("set-auto").checked,
+      discordRpcEnabled: $("set-discord-rpc").checked,
     });
     settingsState.max_ram_mb = ramOverrideMb;
     status("settings-status", "Ajustes guardados.");
   } catch (e) { status("settings-status", e.message); }
 });
+
+$("set-discord-rpc").addEventListener("change", async () => {
+  try {
+    await call("discord_set_enabled", { enabled: $("set-discord-rpc").checked });
+  } catch (_) {}
+});
+
+bindAntilag();
 
 function fillRollbackForm() {
   const sel = $("rb-instance");
@@ -859,3 +930,4 @@ refreshLogin();
 loadInstances();
 runAutoSync(true);
 checkLauncherUpdate();
+call("discord_set_page", { page: "login" }).catch(() => {});

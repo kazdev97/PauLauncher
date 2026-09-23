@@ -498,6 +498,25 @@ pub fn launch_minecraft(
         ram_max_mb,
     );
 
+    // Modo antilag: el túnel WARP cubre solo las IPs públicas del servidor
+    // configurado. Se enciende ANTES del juego para que las rutas ya estén
+    // puestas cuando Minecraft intente conectar. Si falla, el juego sale por
+    // la red normal (solo se avisa por consola).
+    let settings = crate::config::Settings::load();
+    if settings.antilag_enabled && !settings.antilag_host.trim().is_empty() {
+        match crate::antilag::start_tunnel(&settings.antilag_host) {
+            Ok(n) => {
+                println!(
+                    "[antilag] túnel activo para {n} IP(s) del servidor '{}'",
+                    settings.antilag_host
+                );
+            }
+            Err(e) => {
+                println!("[antilag] aviso: {e}");
+            }
+        }
+    }
+
     let mut cmd = Command::new(&command[0]);
     cmd.args(&command[1..])
         .current_dir(&instance_dir)
@@ -513,6 +532,9 @@ pub fn launch_minecraft(
 
     let stamp = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
     fs::write(instance_dir.join("last_launched.txt"), stamp).ok();
+
+    // Actualizar Rich Presence en Discord
+    crate::discord::set_playing(instance_name, &meta.game_version, &meta.loader);
 
     let started = std::time::Instant::now();
     if let Some(stdout) = child.stdout.take() {
@@ -533,6 +555,9 @@ pub fn launch_minecraft(
                 );
             }
             let _ = app2.emit("launch/exit", pid);
+            // El juego terminó (o se detuvo): apaga el túnel antilag y restaura Discord.
+            crate::antilag::stop_tunnel();
+            crate::discord::set_launcher_idle();
         });
     }
     if let Some(stderr) = child.stderr.take() {
@@ -562,6 +587,7 @@ pub fn kill_game() -> Result<(), String> {
     if let Some(mut proc) = state.process.take() {
         let _ = proc.child.kill();
     }
+    crate::discord::set_launcher_idle();
     Ok(())
 }
 

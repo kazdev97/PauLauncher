@@ -1,4 +1,5 @@
 //! Registrar módulos y exponer comandos Tauri al frontend.
+pub mod antilag;
 pub mod auth;
 pub mod config;
 pub mod downloader;
@@ -10,6 +11,7 @@ pub mod launch;
 pub mod packager;
 pub mod sync;
 pub mod updater;
+pub mod discord;
 
 use config::{Account, AccountStore, Settings};
 use serde::Serialize;
@@ -420,6 +422,7 @@ fn settings_save(
     ram_override_mb: u32,
     source_url: String,
     auto_update: bool,
+    discord_rpc_enabled: Option<bool>,
 ) -> Result<(), String> {
     let mut s = Settings::load();
     s.java_path_override = java_path_override;
@@ -427,6 +430,56 @@ fn settings_save(
     s.max_ram_mb = ram_override_mb;
     s.source_url = source_url;
     s.auto_update = auto_update;
+    if let Some(rpc) = discord_rpc_enabled {
+        s.discord_rpc_enabled = rpc;
+        discord::set_enabled(rpc);
+    }
+    s.save()
+}
+
+#[tauri::command]
+fn discord_set_enabled(enabled: bool) -> Result<(), String> {
+    let mut s = Settings::load();
+    s.discord_rpc_enabled = enabled;
+    discord::set_enabled(enabled);
+    s.save()
+}
+
+#[tauri::command]
+fn discord_set_page(page: String) -> Result<(), String> {
+    discord::set_menu_page(&page);
+    Ok(())
+}
+
+// -- Modo antilag (túnel WARP solo para Minecraft) --
+#[tauri::command]
+async fn antilag_install(app: tauri::AppHandle) -> Result<antilag::AntilagStatus, String> {
+    let handle = app.clone();
+    antilag::antilag_install(move |percent, status| {
+        let _ = handle.emit(
+            "antilag/progress",
+            ProgressMsg { percent, status },
+        );
+    })
+    .await
+}
+
+#[tauri::command]
+fn antilag_status() -> Result<antilag::AntilagStatus, String> {
+    Ok(antilag::status())
+}
+
+#[tauri::command]
+fn antilag_set_enabled(enabled: bool) -> Result<(), String> {
+    let mut s = Settings::load();
+    s.antilag_enabled = enabled;
+    s.save()
+}
+
+#[tauri::command]
+fn antilag_set_host(host: String) -> Result<(), String> {
+    let mut s = Settings::load();
+    s.antilag_host = host.trim().to_string();
     s.save()
 }
 
@@ -435,6 +488,9 @@ fn settings_save(
 // ---------------------------------------------------------------------------
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let settings = Settings::load();
+    discord::init(settings.discord_rpc_enabled);
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             // cuentas
@@ -485,6 +541,13 @@ pub fn run() {
             // ajustes
             settings_get,
             settings_save,
+            discord_set_enabled,
+            discord_set_page,
+            // modo antilag
+            antilag_install,
+            antilag_status,
+            antilag_set_enabled,
+            antilag_set_host,
         ])
         .run(tauri::generate_context!())
         .expect("error al iniciar PauLauncher");

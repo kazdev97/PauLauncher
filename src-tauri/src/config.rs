@@ -67,6 +67,9 @@ pub struct Settings {
     pub last_username: String,
     pub source_url: String,
     pub auto_update: bool,
+    pub antilag_enabled: bool,
+    pub antilag_host: String,
+    pub discord_rpc_enabled: bool,
 }
 
 impl Default for Settings {
@@ -83,6 +86,9 @@ impl Default for Settings {
             last_username: String::new(),
             source_url: DEFAULT_SOURCE_URL.to_string(),
             auto_update: true,
+            antilag_enabled: false,
+            antilag_host: String::new(),
+            discord_rpc_enabled: true,
         }
     }
 }

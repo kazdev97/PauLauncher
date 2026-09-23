@@ -164,7 +164,30 @@
             <span class="switch-track"><span class="switch-knob"></span></span>
             <span>Actualizar automáticamente (al abrir y antes de jugar)</span>
           </label>
+          <label class="switch">
+            <input type="checkbox" id="set-discord-rpc" checked />
+            <span class="switch-track"><span class="switch-knob"></span></span>
+            <span>Mostrar estado en Discord (Rich Presence)</span>
+          </label>
           <button class="btn primary" id="btn-save-settings">Guardar</button>
+        </div>
+
+        <div class="card glass">
+          <h2>Modo antilag</h2>
+          <p class="muted">Túnel Cloudflare WARP que cubre <strong>solo la conexión a tu servidor</strong> (las IPs de la dirección que pones abajo). El resto de tu internet no se toca: Discord y el navegador siguen yendo por tu conexión normal.</p>
+          <label>Dirección del servidor (la que escribís los jugadores para entrar, IP o dominio)
+            <input id="antilag-host" placeholder="ej. play.miservidor.com o 203.0.113.10" />
+          </label>
+          <div class="row">
+            <button class="btn primary" id="btn-antilag-install">Instalar modo antilag</button>
+            <label class="switch">
+              <input type="checkbox" id="antilag-enable" />
+              <span class="switch-track"><span class="switch-knob"></span></span>
+              <span>Activar al jugar</span>
+            </label>
+          </div>
+          <p id="antilag-status" class="status"></p>
+          <p id="antilag-hint" class="status"></p>
         </div>
 
         <div class="card glass">
