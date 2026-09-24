@@ -948,7 +948,7 @@ if (themeToggle) {
 function checkLauncherUpdate() {
   const chip = $("update-chip");
   if (!chip) return;
-  call("update_check", {}).then((info) => {
+  call("update_check", {}).then(async (info) => {
     chip.textContent = "";
     const ver = document.createElement("span");
     ver.textContent = `PauLauncher v${info.current || "?"}`;
@@ -959,10 +959,8 @@ function checkLauncherUpdate() {
       const link = document.createElement("a");
       link.href = "#";
       link.className = "up";
-      link.textContent = "actualización disponible";
-      link.addEventListener("click", async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+      link.textContent = `actualización disponible (v${info.latest})`;
+      const apply = async () => {
         if (DEMO) { showModal(`<h2>Actualización v${escapeHtml(info.latest)}</h2><div class="group">Demo: se descargaría, instalaría y reiniciaría automáticamente.</div>`); return; }
         chip.textContent = "descargando actualización…";
         link.classList.remove("clickable");
@@ -974,10 +972,26 @@ function checkLauncherUpdate() {
           chip.append(ver);
           showModal(`<h2>Error al actualizar</h2><pre class="mono">${escapeHtml(err.message)}</pre>`);
         }
+      };
+      link.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        await apply();
       });
       chip.classList.add("clickable");
       chip.appendChild(sep);
       chip.appendChild(link);
+      try {
+        const s = await getSettings();
+        if (s.auto_update) {
+          chip.textContent = "";
+          chip.append(ver);
+          const note = document.createElement("span");
+          note.textContent = " · " + (DEMO ? "actualización detectada" : "descargando actualización…");
+          chip.appendChild(note);
+          await apply();
+        }
+      } catch (_) {}
     }
   }).catch((err) => {
     chip.textContent = `PauLauncher v${DEMO ? "0.1.0" : "?"} · sin conexión`;

@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0",
-  "notes": "Primera release: instalación Forge/NeoForge/Fabric multi-versión y auto-actualización por GitHub.",
+  "version": "0.1.1",
+  "notes": "Sesión: renueva token al lanzar, relogin, consola y RAM 6-8 GB.",
   "url": "https://raw.githubusercontent.com/kazdev97/PauLauncher/main/builds/paulauncher.exe"
 }
