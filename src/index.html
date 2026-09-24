@@ -94,7 +94,7 @@
           </label>
           <div class="form-grid">
             <label>Nombre de usuario
-              <input id="offline-username" placeholder="Ej. Soy_Kaz" maxlength="16" />
+              <input id="offline-username" placeholder="Ej. Juanito67" maxlength="16" />
             </label>
           </div>
           <button class="btn primary" id="btn-save-offline">Guardar y usar modo No premium</button>
@@ -152,7 +152,7 @@
         </div>
 
         <div class="card glass form-grid">
-          <label>Java manual (opcional — si lo dejas vacío, el launcher detecta y descarga el que pide tu versión)
+          <label>Java
             <input id="set-java" placeholder="C:\...\bin\java.exe" />
           </label>
           <label class="switch">
@@ -163,20 +163,15 @@
           <label class="switch">
             <input type="checkbox" id="set-auto" />
             <span class="switch-track"><span class="switch-knob"></span></span>
-            <span>Actualizar automáticamente (al abrir y antes de jugar)</span>
-          </label>
-          <label class="switch">
-            <input type="checkbox" id="set-discord-rpc" checked />
-            <span class="switch-track"><span class="switch-knob"></span></span>
-            <span>Mostrar estado en Discord (Rich Presence)</span>
+            <span>Actualizaciones automaticas</span>
           </label>
           <button class="btn primary" id="btn-save-settings">Guardar</button>
         </div>
 
         <div class="card glass">
           <h2>Modo antilag</h2>
-          <p class="muted">Túnel Cloudflare WARP que cubre <strong>solo la conexión a tu servidor</strong> (las IPs de la dirección que pones abajo). El resto de tu internet no se toca: Discord y el navegador siguen yendo por tu conexión normal.</p>
-          <label>Dirección del servidor (la que escribís los jugadores para entrar, IP o dominio)
+          <p class="muted">Túnel Cloudflare WARP que cubre solo la conexión de Minecraft</p>
+          <label>
             <input id="antilag-host" placeholder="ej. play.miservidor.com o 203.0.113.10" />
           </label>
           <div class="row">

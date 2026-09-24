@@ -9,7 +9,7 @@ const status = (id, msg) => { $(id).textContent = msg || ""; };
 // ---------------------------------------------------------------------------
 // Datos y stubs del modo demo
 // ---------------------------------------------------------------------------
-const demoStore = { accounts: [], selected_id: "", mode: "offline", offline_username: "Soy_Kaz" };
+const demoStore = { accounts: [], selected_id: "", mode: "offline", offline_username: "Juanito67" };
 const demoInstances = [
   { name: "Vanilla 1.21.4", version_id: "1.21.4", loader: "vanilla", game_version: "1.21.4", loader_version: "", source: "local", manifest_url: "", manifest_type: "", server_version: "", actualizacion: true, installed: true, instance_dir: "C:\\Documentos\\PauLauncher\\instancias\\Vanilla 1.21.4", last_launched: "2026-09-14 18:00", session_based: false, remote: false },
   { name: "Server de Kaz", version_id: "1.21.4-fabric-0.16.14", loader: "fabric", game_version: "1.21.4", loader_version: "0.16.14", source: "remote", manifest_url: "https://drive.google.com/uc?export=download&id=abc123", manifest_type: "pau", server_version: "2026-09-13", actualizacion: true, installed: true, instance_dir: "C:\\Documentos\\PauLauncher\\instancias\\Server de Kaz", last_launched: "2026-09-13 21:30", session_based: false, remote: true },
@@ -631,7 +631,6 @@ async function loadSettings() {
     $("set-java").value = s.java_path_override || "";
     $("set-streamer").checked = !!s.streamer_mode;
     $("set-auto").checked = s.auto_update !== undefined ? !!s.auto_update : true;
-    $("set-discord-rpc").checked = s.discord_rpc_enabled !== undefined ? !!s.discord_rpc_enabled : true;
   } catch (e) { status("settings-status", e.message); }
 }
 
@@ -644,9 +643,7 @@ async function loadAntilag() {
     const hint = $("antilag-hint");
     hint.style.color = "";
     if (st.installed && st.tasks_registered) {
-      hint.textContent = st.tunnel_active
-        ? "Túnel activo ahora mismo."
-        : "Listo: al jugar, la conexión al servidor sale por WARP.";
+      hint.textContent = st.tunnel_active ? "Túnel activo ahora mismo." : "";
       $("btn-antilag-install").textContent = "Reinstalar modo antilag";
     } else if (st.installed) {
       hint.textContent = "Faltan las tareas de administrador: pulsa Instalar y acepta el permiso.";
@@ -802,17 +799,11 @@ $("btn-save-settings").addEventListener("click", async () => {
       ramOverrideMb,
       sourceUrl,
       autoUpdate: $("set-auto").checked,
-      discordRpcEnabled: $("set-discord-rpc").checked,
+      discordRpcEnabled: true,
     });
     settingsState.max_ram_mb = ramOverrideMb;
     status("settings-status", "Ajustes guardados.");
   } catch (e) { status("settings-status", e.message); }
-});
-
-$("set-discord-rpc").addEventListener("change", async () => {
-  try {
-    await call("discord_set_enabled", { enabled: $("set-discord-rpc").checked });
-  } catch (_) {}
 });
 
 bindAntilag();

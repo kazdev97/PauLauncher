@@ -1,6 +1,6 @@
 [package]
 name = "paulauncher"
-version = "0.1.0"
+version = "0.1.1"
 description = "PauLauncher - launcher de Minecraft con control de instancias para el owner"
 authors = ["Kaz"]
 edition = "2021"

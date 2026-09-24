@@ -451,7 +451,7 @@ fn settings_save(
     ram_override_mb: u32,
     source_url: String,
     auto_update: bool,
-    discord_rpc_enabled: Option<bool>,
+    _discord_rpc_enabled: Option<bool>,
 ) -> Result<(), String> {
     let mut s = Settings::load();
     s.java_path_override = java_path_override;
@@ -459,10 +459,8 @@ fn settings_save(
     s.max_ram_mb = ram_override_mb;
     s.source_url = source_url;
     s.auto_update = auto_update;
-    if let Some(rpc) = discord_rpc_enabled {
-        s.discord_rpc_enabled = rpc;
-        discord::set_enabled(rpc);
-    }
+    s.discord_rpc_enabled = true;
+    discord::set_enabled(true);
     s.save()
 }
 
@@ -517,8 +515,7 @@ fn antilag_set_host(host: String) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let settings = Settings::load();
-    discord::init(settings.discord_rpc_enabled);
+    discord::init(true);
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
