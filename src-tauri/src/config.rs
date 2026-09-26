@@ -1,20 +1,10 @@
-//! Rutas de datos y ajustes del launcher.
-//! Terminal del puerto del port de KazLauncher (paths.py / settings.py): en vez de
-//! '<Documentos>/Kaz Studio/KazLauncher' usamos '<Documentos>/PauLauncher'.
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-
-/// identidad/nombre de la app (usado para nombres de carpeta)
-pub const APP_NAME: &str = "PauLauncher";
-/// metacarpeta interna en la que cada instancia guarda su manifest local
+pub const APP_NAME: &str = "NexusLauncher";
 pub const INSTANCE_META_FILE: &str = "kazu_instance.json";
-
-/// URL por defecto del índice de instancias disponibles (source).
-/// Apunta a un repo GitHub público del owner:
-/// raw.githubusercontent.com/<usuario>/<repo>/main/index.json
 pub const DEFAULT_SOURCE_URL: &str =
-    "https://raw.githubusercontent.com/kazdev97/Paucalipsis-2/main/index.json";
+    "https://raw.githubusercontent.com/kazdev97/Nexusmodpacks/main/index.json";
 
 pub fn launcher_data_dir() -> PathBuf {
     let base = dirs::document_dir()
@@ -30,8 +20,6 @@ pub fn instances_dir() -> PathBuf {
     fs::create_dir_all(&dir).ok();
     dir
 }
-
-/// Java portátil (Adoptium) descargado por el launcher
 pub fn runtime_dir() -> PathBuf {
     let dir = launcher_data_dir().join("runtime");
     fs::create_dir_all(&dir).ok();
@@ -47,12 +35,8 @@ pub fn settings_file() -> PathBuf {
 }
 
 pub fn launcher_log_file() -> PathBuf {
-    launcher_data_dir().join("paulauncher.log")
+    launcher_data_dir().join("nexuslauncher.log")
 }
-
-// ---------------------------------------------------------------------------
-// Ajustes del usuario
-// ---------------------------------------------------------------------------
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -110,8 +94,6 @@ impl Settings {
             serde_json::to_string_pretty(self).map_err(|e| format!("serialize settings: {e}"))?;
         fs::write(&path, json).map_err(|e| format!("guardar settings: {e}"))
     }
-
-    /// RAM efectiva (MB) usando el maximum si se definió, sino ram_mb.
     pub fn effective_ram_mb(&self) -> u32 {
         if self.max_ram_mb > 0 {
             self.max_ram_mb
@@ -120,18 +102,12 @@ impl Settings {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Cuentas premium (multi-cuenta, port de account_store.py)
-// ---------------------------------------------------------------------------
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
     pub id: String,
     pub name: String,
     pub access_token: String,
     pub refresh_token: String,
-    /// true cuando el token ya no se puede renovar (MSA caducado/revocado):
-    /// la UI muestra "Sesión cerrada" y el botón Relogin.
     #[serde(default)]
     pub needs_relogin: bool,
 }
@@ -173,8 +149,6 @@ impl AccountStore {
     pub fn get(&self, account_id: &str) -> Option<&Account> {
         self.accounts.iter().find(|a| a.id == account_id)
     }
-
-    /// Marca una cuenta como seleccionada (modo online).
     pub fn set_selected(&mut self, account_id: &str) -> Result<(), String> {
         if !self.accounts.iter().any(|a| a.id == account_id) {
             return Err("La cuenta no está en el almacén".to_string());
@@ -183,8 +157,6 @@ impl AccountStore {
         self.mode = "online".to_string();
         self.save()
     }
-
-    /// upsert_account: añade o actualiza y lo deja seleccionado en modo online.
     pub fn upsert(&mut self, account: Account) {
         let id = account.id.clone();
         if let Some(existing) = self.accounts.iter_mut().find(|a| a.id == id) {
@@ -209,10 +181,6 @@ impl AccountStore {
         }
     }
 }
-
-/// Cuenta "No premium": sesión offline con un nombre local y sin tokens de
-/// Microsoft. La UUID se deriva del nombre (determinista, patrón habitual en
-/// launchers) y el token queda vacío para que el cliente entre en modo legacy.
 pub fn offline_account(username: &str) -> Account {
     let hash = crate::downloader::sha256_bytes(username.trim().as_bytes());
     let hex: String = hash.chars().take(32).collect();
@@ -232,19 +200,13 @@ pub fn offline_account(username: &str) -> Account {
         needs_relogin: false,
     }
 }
-
-/// Utilidades de rutas usadas por varios módulos.
 pub fn path_exists(p: impl AsRef<Path>) -> bool {
     p.as_ref().exists()
 }
-
-/// Free helper para la UI: seleccionar cuenta persistida.
 pub fn set_selected_account(account_id: &str) -> Result<(), String> {
     let mut store = AccountStore::load();
     store.set_selected(account_id)
 }
-
-/// Free helper para la UI: eliminar una cuenta persistida.
 pub fn remove_account(account_id: &str) -> Result<(), String> {
     let mut store = AccountStore::load();
     store.remove(account_id);

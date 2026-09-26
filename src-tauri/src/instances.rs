@@ -1,6 +1,3 @@
-//! Registro de instancias (port de utils/instance_registry.py).
-//! Cada instancia vive en '<data>/instancias/<nombre>/' con su manifesto
-//! 'kazu_instance.json' y carpetas versions/, libraries/, assets/, mods/, config/, saves/.
 use crate::config::{instances_dir, INSTANCE_META_FILE};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -21,7 +18,6 @@ pub struct InstanceMeta {
     pub server_version: String,
     pub actualizacion: bool,
     pub extra_info: String,
-    // Modo "repo Git": el pack es una carpeta de un repositorio GitHub.
     pub github_repo: String,     // "owner/repo"
     pub github_branch: String,   // rama (por defecto "main")
     pub github_path: String,     // carpeta del pack dentro de la repo ("" = raíz)
@@ -93,8 +89,6 @@ pub fn save_meta(instance_dir: &Path, meta: &InstanceMeta) -> Result<(), String>
     fs::write(instance_dir.join(INSTANCE_META_FILE), json)
         .map_err(|e| format!("guardar meta: {e}"))
 }
-
-/// Devuelve el version id instalado en la instancia (lee el JSON dentro de versions/).
 pub fn installed_version_id(instance_dir: &Path, meta: &InstanceMeta) -> Option<String> {
     let versions_dir = instance_dir.join("versions");
     if !versions_dir.is_dir() {
@@ -109,8 +103,6 @@ pub fn installed_version_id(instance_dir: &Path, meta: &InstanceMeta) -> Option<
                 .collect()
         })
         .unwrap_or_default();
-
-    // Loader concretos (fabric/forge/neoforge) gana siempre al vanilla base
     let game = &meta.game_version;
     let loader = meta.loader.to_lowercase();
     if loader != "vanilla" && !loader.is_empty() {
@@ -134,7 +126,6 @@ pub fn installed_version_id(instance_dir: &Path, meta: &InstanceMeta) -> Option<
             return Some(found);
         }
     }
-    // Vanilla base instalado
     if ids.iter().any(|id| id == game) {
         return Some(game.clone());
     }
@@ -145,8 +136,6 @@ pub fn is_installed(instance_dir: &Path, meta: &InstanceMeta) -> bool {
     installed_version_id(instance_dir, meta).is_some()
         || instance_dir.join(INSTANCE_META_FILE).exists()
 }
-
-/// Escanea la carpeta instancias/ y devuelve la lista (port de scan_remote_instances).
 pub fn scan_instances() -> Vec<InstanceInfo> {
     let base = instances_dir();
     let mut results = Vec::new();

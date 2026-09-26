@@ -1,12 +1,12 @@
 [package]
-name = "paulauncher"
+name = "nexuslauncher"
 version = "0.1.1"
-description = "PauLauncher - launcher de Minecraft con control de instancias para el owner"
+description = "NexusLauncher - launcher de Minecraft con control de instancias para el owner"
 authors = ["Kaz"]
 edition = "2021"
 
 [lib]
-name = "paulauncher_lib"
+name = "nexuslauncher_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -1,8 +1,3 @@
-//! Exportador de instancia a .pau (zip) + manifest.json para publicar en
-//! Google Drive / cualquier host. El jugador sólo necesita la URL del
-//! manifest.json: la URL del zip viaja dentro del manifest.
-//!
-//! Complemento de sync.rs: ese módulo consume (check/apply), éste produce.
 use crate::downloader::sha256_file;
 use crate::instances::InstanceMeta;
 use crate::sync::{default_managed, default_protected, Manifest, ManifestFile, MANIFEST_FORMAT};
@@ -18,8 +13,6 @@ pub struct ExportResult {
     pub archive_path: String,
     pub warnings: Vec<String>,
 }
-
-/// Recorre las carpetas gestionadas + extras y devuelve (path_relativo, sha256).
 fn walk_files(root: &Path, folders: &[String]) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for folder in folders {
@@ -54,8 +47,6 @@ fn now_revision() -> String {
         .unwrap_or(0);
     chrono::Local::now().format("%Y%m%d").to_string() + &secs.to_string()
 }
-
-/// Genera manifest.json (solo archivos gestionados) dentro de destination_dir.
 fn write_manifest(
     instance_dir: &Path,
     destination_dir: &Path,
@@ -109,11 +100,6 @@ fn write_manifest(
     .map_err(|e| format!("escribir manifest.json: {e}"))?;
     Ok(f)
 }
-
-/// Exporta la instancia: crea manifest.json + (si procede) el fichero .pau (zip).
-/// Si `files_base_url` no está vacío usa el MODO POR ARCHIVOS: sin zip, cada
-/// archivo del manifest lleva su `url` = base + ruta, y se copia el árbol bajo
-/// `files/` para subirlo tal cual a GitHub. En ese modo `archive_url` se ignora.
 pub fn export_instance(
     instance_dir: &Path,
     destination_dir: &Path,
@@ -139,7 +125,6 @@ pub fn export_instance(
     let mut files = walk_files(instance_dir, &managed);
     let mut warnings = Vec::new();
     for (path, _) in &files {
-        // no incluir archivos prohibidos aunque estén en carpetas gestionadas
         for p in &protected {
             if path == p {
                 warnings.push(format!("omitido (protegido): {path}"));
@@ -168,8 +153,6 @@ pub fn export_instance(
     let mut archive_path = String::new();
 
     if per_file {
-        // Copiar el árbol publicado bajo `files/` para subirlo directo a la carpeta
-        // del repo (la base URL debe apuntar a esa carpeta en raw.githubusercontent.com).
         for (rel_path, _) in &files {
             let src = instance_dir.join(rel_path);
             let dst = destination_dir.join("files").join(rel_path);
@@ -182,22 +165,17 @@ pub fn export_instance(
             "Modo por archivos: sube la carpeta 'files' a la ruta indicada en la base URL".to_string(),
         );
     } else {
-        // ZIP con manifest.json + files/<path>
         let archive_path_buf = destination_dir.join(format!("PauPack-{}.pau.zip", meta.name));
         let file = fs::File::create(&archive_path_buf).map_err(|e| format!("crear zip: {e}"))?;
         let mut zip = zip::ZipWriter::new(file);
         let options: zip::write::SimpleFileOptions =
             zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-
-        // 1. manifest.json en la raíz del zip
         zip.start_file("manifest.json", options)
             .map_err(|e| format!("zip start manifest: {e}"))?;
         zip.write_all(fs::read(destination_dir.join("manifest.json"))
             .map_err(|e| format!("leer manifest: {e}"))?
             .as_slice())
             .map_err(|e| format!("zip manifest: {e}"))?;
-
-        // 2. archivos bajo files/
         for (rel_path, _) in &files {
             let src = instance_dir.join(rel_path);
             let zip_name = format!("files/{}", rel_path.replace('\\', "/"));
@@ -216,8 +194,6 @@ pub fn export_instance(
         warnings,
     })
 }
-
-/// Prepara una carpeta exportable lista para dársela al jugador.
 pub fn export_whitepaper() -> &'static str {
     "1) Exporta la instancia (crea manifest.json + PauPack-*.pau.zip).\n\
      2) Sube los ficheros a GitHub (o Google Drive).\n\

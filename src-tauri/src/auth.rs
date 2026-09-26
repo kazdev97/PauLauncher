@@ -1,6 +1,3 @@
-//! Autenticación Microsoft / Minecraft (port de core/premium_auth.py + utils/account_store.py).
-//! Flujo OAuth2 auth-code con PKCE sobre el tenant "consumers", servidor local
-//! en 127.0.0.1 para capturar el redirect, y después XBL -> XSTS -> Minecraft.
 use crate::config::Account;
 use crate::downloader::{http_client, post_form_json, post_json};
 use base64::Engine;
@@ -8,12 +5,6 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-// Client_id de la app Azure registrada (la misma del KazLauncher de KazStudio).
-// IMPORTANTE: registra exactamente el redirect_uri http://localhost:<puerto>/callback
-// en la app de Azure (az ad app create), igual que hacía KazLauncher.
-// El valor se inyecta en compilación desde `client_id.env` (git-ignoreado) o la
-// variable de entorno PAU_CLIENT_ID; el repo NO contiene el ID real.
 include!(concat!(env!("OUT_DIR"), "/client_id.rs"));
 const TOKEN_ENDPOINT: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
 const AUTH_ENDPOINT: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
@@ -84,8 +75,6 @@ struct MinecraftProfile {
     #[serde(default)]
     error: Option<String>,
 }
-
-/// Busca el primer puerto libre en 8080..8090 (igual que _get_auth_port de Kaz).
 fn find_free_port() -> Result<u16, String> {
     for port in 8080u16..8090 {
         if let Ok(listener) = std::net::TcpListener::bind(("127.0.0.1", port)) {
@@ -95,8 +84,6 @@ fn find_free_port() -> Result<u16, String> {
     }
     Err("No hay puertos disponibles (8080-8089)".to_string())
 }
-
-/// Genera verifier y challenge PKCE S256 (igual que _pkce_pair de Kaz).
 fn pkce_pair() -> (String, String) {
     use sha2::{Digest, Sha256};
     let mut raw = [0u8; 48];
@@ -128,8 +115,6 @@ fn build_auth_url(redirect_uri: &str, challenge: &str, state: &str, client_id: &
     .unwrap_or_default();
     format!("{AUTH_ENDPOINT}?{params}")
 }
-
-/// Espera un GET /callback?code=... en 127.0.0.1:port y devuelve (code, state, bool_error).
 async fn wait_for_callback(port: u16) -> Result<(String, String, bool), String> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
         .await
@@ -150,15 +135,12 @@ async fn wait_for_callback(port: u16) -> Result<(String, String, bool), String> 
         .await
         .map_err(|_| "timeout esperando redirect de Microsoft".to_string())?
         .map_err(|e| format!("leer OAuth: {e}"))?;
-    // Escribimos igualmente la respuesta para el navegador (aunque la request sea parcial)
     let _ = socket.write_all(response.as_bytes()).await;
     let _ = tokio::time::sleep(Duration::from_millis(200)).await;
     let _ = socket.write_all(body).await;
     let _ = socket.shutdown().await;
     let request = String::from_utf8_lossy(&buf[..n]).to_string();
     let first_line = request.lines().next().unwrap_or("");
-    // "GET /callback?code=...&state=... HTTP/1.1" -> la ruta es el 2º token,
-    // NO el método (coger "GET" provocaba "invalid port number").
     let mut tokens = first_line.split_whitespace();
     let _method = tokens.next();
     let path = tokens.next().unwrap_or("");
@@ -174,8 +156,6 @@ async fn wait_for_callback(port: u16) -> Result<(String, String, bool), String> 
     }
     Ok((code, state, has_error))
 }
-
-/// XBL -> XSTS -> token Minecraft -> perfil (port de fetch_minecraft_profile).
 async fn fetch_minecraft_profile(msa_access_token: &str) -> Result<Account, String> {
     let client = http_client();
     let xbl_body = serde_json::json!({
@@ -221,7 +201,6 @@ async fn fetch_minecraft_profile(msa_access_token: &str) -> Result<Account, Stri
     let xsts_token = match &xsts.token {
         Some(t) => t.clone(),
         None => {
-            // 2148916233 = sin Minecraft, 2148916238 = cuenta de niño, etc.
             let err = xsts.xerr.unwrap_or(0);
             if err == 2148916233 {
                 return Err(MINECRAFT_NOT_OWNED.to_string());
@@ -296,8 +275,6 @@ pub async fn exchange_code(
     account.refresh_token = tok.refresh_token.unwrap_or_default();
     Ok((account, access))
 }
-
-/// Renueva el token con el refresh_token y devuelve la cuenta actualizada.
 pub async fn refresh_token(client_id: &str, refresh: &str) -> Result<(Account, String), String> {
     let client = http_client();
     let form = [
@@ -322,19 +299,15 @@ pub async fn refresh_token(client_id: &str, refresh: &str) -> Result<(Account, S
         .unwrap_or_else(|| refresh.to_string());
     Ok((account, access))
 }
-
-/// Login completo. Abre el navegador, captura el redirect y guarda la cuenta.
 pub async fn login(client_id: &str) -> Result<Account, String> {
     if client_id.trim().is_empty() {
-        return Err("PauLauncher no tiene configurado su CLIENT_ID de Microsoft (falta client_id.env al compilar).".to_string());
+        return Err("NexusLauncher no tiene configurado su CLIENT_ID de Microsoft (falta client_id.env al compilar).".to_string());
     }
     let port = find_free_port()?;
     let redirect_uri = format!("http://localhost:{port}/callback");
     let state = uuid::Uuid::new_v4().simple().to_string();
     let (verifier, challenge) = pkce_pair();
     let auth_url = build_auth_url(&redirect_uri, &challenge, &state, client_id);
-
-    // lanzar el servidor de callback antes de abrir el navegador
     let wait_handle = tokio::spawn(wait_for_callback(port));
 
     open::that(&auth_url).map_err(|e| format!("no se pudo abrir el navegador: {e}"))?;
@@ -351,9 +324,6 @@ pub async fn login(client_id: &str) -> Result<Account, String> {
     let (account, _access) = exchange_code(client_id, &redirect_uri, &code, &verifier).await?;
     Ok(account)
 }
-
-/// Flujo completo usado por la UI: primero intenta renovar la cuenta seleccionada
-/// con su refresh_token; si no hay sesión o falla, abre el navegador para login nuevo.
 pub async fn start_login_flow(_app: tauri::AppHandle) -> Result<Account, String> {
     let mut store = crate::config::AccountStore::load();
     if let Some(selected) = store.selected() {

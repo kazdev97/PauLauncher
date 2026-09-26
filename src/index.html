@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PauLauncher</title>
+  <title>NexusLauncher</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="app">
-    <!-- BOTÓN MODO OSCURO -->
+    
     <button id="theme-toggle" class="theme-toggle-btn" title="Cambiar modo oscuro / claro" aria-label="Cambiar modo oscuro / claro">
       <svg class="theme-icon icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="5"></circle>
@@ -26,9 +26,9 @@
       </svg>
     </button>
 
-    <!-- NAV -->
+    
     <nav class="sidebar">
-      <div class="brand"><a class="brand-logo" href="https://doctorapaula.carrd.co/" target="_blank" rel="noopener"><img src="assets/dra-paula.png" alt="PauLauncher" /></a></div>
+      <div class="brand"><a class="brand-logo" href="https://github.com/kazdev97/NexusLauncher" target="_blank" rel="noopener"><img src="assets/icono.png" alt="NexusLauncher" /></a></div>
       <div class="nav-items">
         <button class="nav-item active" data-page="login">Cuenta</button>
         <button class="nav-item" data-page="instances">Instancias</button>
@@ -36,6 +36,10 @@
         <button class="nav-item" data-page="console">Consola</button>
       </div>
       <div class="nav-footer">
+        <button id="donate-btn" class="donate-btn">
+          <img src="https://storage.ko-fi.com/cdn/logomarkLogo.png" alt="Ko-fi" width="22" height="22" />
+          <span>Donar</span>
+        </button>
         <div id="nav-user-container" class="nav-user-card" title="Ver cuenta">
           <img id="nav-user-avatar" class="nav-user-avatar hidden" src="" alt="Avatar" />
           <span id="nav-user" class="nav-user">Sin sesión</span>
@@ -43,9 +47,9 @@
       </div>
     </nav>
 
-    <!-- PAGES -->
+    
     <main class="content">
-      <!-- LOGIN -->
+      
       <section id="page-login" class="page active">
         <h1>Cuenta</h1>
         <div class="card glass">
@@ -103,7 +107,7 @@
         <p id="login-status" class="status"></p>
       </section>
 
-      <!-- INSTANCIAS -->
+      
       <section id="page-instances" class="page">
         <div class="page-head">
           <h1>Instancias</h1>
@@ -127,7 +131,7 @@
         <p id="instances-status" class="status"></p>
       </section>
 
-      <!-- AJUSTES -->
+      
       <section id="page-settings" class="page">
         <h1>Ajustes</h1>
 
@@ -198,7 +202,7 @@
         <p id="settings-status" class="status"></p>
       </section>
 
-      <!-- CONSOLA -->
+      
       <section id="page-console" class="page">
         <h1>Consola</h1>
         <div class="card glass">

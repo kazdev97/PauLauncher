@@ -1,13 +1,8 @@
-# Genera los iconos de PauLauncher a partir del logo real de la UI
-# (src/assets/dra-paula.png): PNG en varios tamanos + ICO multi-tamano.
-# Requiere solo .NET System.Drawing (incluido en Windows).
 Add-Type -AssemblyName System.Drawing
 
-$src = Join-Path $PSScriptRoot '..\src\assets\dra-paula.png'
+$src = Join-Path $PSScriptRoot '..\src\assets\icono.png'
 $outDir = Join-Path $PSScriptRoot '..\src-tauri\icons'
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-
-# Carga el logo y lo recorta en cuadrado (centrado) para que sirva como icono.
 $source = [System.Drawing.Image]::FromFile($src)
 $side = [Math]::Min($source.Width, $source.Height)
 $cropX = [int](($source.Width - $side) / 2)
@@ -26,8 +21,6 @@ function Render-Logo([int]$size, [System.Drawing.Rectangle]$srcRect, [System.Dra
     $g.Dispose()
     return $bmp
 }
-
-# PNGs usados por tauri.conf.json
 $pngSizes = @(
     @{ Size = 32;  File = '32x32.png' },
     @{ Size = 128; File = '128x128.png' },
@@ -39,9 +32,7 @@ foreach ($p in $pngSizes) {
     $bmp.Save((Join-Path $outDir $p.File), [System.Drawing.Imaging.ImageFormat]::Png)
     $bmp.Dispose()
 }
-
-# ICO multi-tamano (16,32,48,64,128,256) con frames PNG
-$sizes = @(16, 32, 48, 64, 128, 256)
+$sizes = @(16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 80, 96, 112, 128, 160, 192, 256)
 $frames = @()
 foreach ($s in $sizes) {
     $bmp = Render-Logo $s $sourceRect $source
@@ -78,5 +69,5 @@ $bw.Dispose()
 $fs.Dispose()
 
 $source.Dispose()
-Write-Output 'Iconos generados a partir de dra-paula.png:'
+Write-Output 'Iconos generados a partir de icono.png:'
 Get-ChildItem $outDir | Select-Object Name, Length | Format-Table -AutoSize

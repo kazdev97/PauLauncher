@@ -1,16 +1,3 @@
-//! Modo antilag: túnel Cloudflare WARP que cubre SOLO la conexión de Minecraft.
-//!
-//! Cómo funciona:
-//! - Motor: sing-box fijado en 1.12.7 (el outbound wireguard se eliminó en
-//!   1.13) + wintun.dll. Binarios descargados una vez en <datos>\antilag.
-//! - Identidad: registrada una vez contra Cloudflare (v0a884, warp_enabled)
-//!   y reutilizada (warp.json).
-//! - Elevación: se registran DURANTE la instalación dos tareas programadas
-//!   On/Off con RunLevel Highest (un único UAC al instalar). Después, on/off
-//!   se disparan con Start-ScheduledTask sin pedir permisos.
-//! - Alcance: auto_route=false y una ruta /32 por IP pública del servidor,
-//!   metida al tun. El resto del sistema sale por la red normal (Discord,
-//!   navegador, etc. no se tocan).
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use chrono::Utc;
@@ -22,15 +9,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use x25519_dalek::{PublicKey, StaticSecret};
 
-pub const TASK_ON: &str = "PauLauncherAntilagOn";
-pub const TASK_OFF: &str = "PauLauncherAntilagOff";
+pub const TASK_ON: &str = "NexusLauncherAntilagOn";
+pub const TASK_OFF: &str = "NexusLauncherAntilagOff";
 pub const SING_BOX_VERSION: &str = "1.12.7";
 pub const TUN_GATEWAY: &str = "172.16.0.1";
 pub const SING_BOX_URL: &str = "https://github.com/SagerNet/sing-box/releases/download/v1.12.7/sing-box-1.12.7-windows-amd64.zip";
 pub const WINTUN_URL: &str = "https://www.wintun.net/builds/wintun-0.14.1.zip";
 const API_BASE: &str = "https://api.cloudflareclient.com/v0a884";
-
-/// Directorio de trabajo del modo antilag: <Documentos>\PauLauncher\antilag.
 pub fn antilag_dir() -> PathBuf {
     let dir = crate::config::launcher_data_dir().join("antilag");
     fs::create_dir_all(&dir).ok();
@@ -58,10 +43,6 @@ pub fn session_config() -> PathBuf {
 pub fn targets_file() -> PathBuf {
     antilag_dir().join("targets.txt")
 }
-
-// ---------------------------------------------------------------------------
-// Estado que ve el frontend
-// ---------------------------------------------------------------------------
 #[derive(Clone, Serialize)]
 pub struct AntilagStatus {
     pub installed: bool,
@@ -103,8 +84,6 @@ fn task_exists(name: &str) -> bool {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "True")
         .unwrap_or(false)
 }
-
-/// PowerShell sin ventana de consola (evita flashes al lanzar tareas).
 fn powershell_hidden() -> Command {
     let mut cmd = Command::new("powershell");
     #[cfg(target_os = "windows")]
@@ -123,10 +102,6 @@ pub fn tunnel_active() -> bool {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "True")
         .unwrap_or(false)
 }
-
-// ---------------------------------------------------------------------------
-// Identidad WARP (una vez por equipo, se reutiliza)
-// ---------------------------------------------------------------------------
 #[derive(Serialize, Deserialize)]
 struct WarpIdentity {
     id: String,
@@ -143,9 +118,6 @@ fn load_identity() -> Option<WarpIdentity> {
     let text = fs::read_to_string(warp_file()).ok()?;
     serde_json::from_str(&text).ok()
 }
-
-/// Flujo wgcf minimizado: register -> PATCH warp_enabled=true -> GET config.
-/// Guarda warp.json y lo devuelve.
 async fn register_identity(
     prog: impl FnMut(u32, String),
 ) -> Result<WarpIdentity, String> {
@@ -265,10 +237,6 @@ async fn register_identity(
     prog(100, "Identidad WARP lista.".into());
     Ok(ident)
 }
-
-// ---------------------------------------------------------------------------
-// Motor sing-box + wintun (descarga on-demand, ~15 MB)
-// ---------------------------------------------------------------------------
 async fn download_to_file(url: &str, dest: &Path) -> Result<(), String> {
     let mut resp = reqwest::Client::new()
         .get(url)
@@ -311,8 +279,6 @@ pub async fn ensure_engine(mut prog: impl FnMut(u32, String)) -> Result<(), Stri
     prog(100, "Motor de túnel listo.".into());
     Ok(())
 }
-
-/// Extrae el primer entry del zip cuyo nombre termine en `suffix` y lo guarda.
 fn extract_entry(zip_path: &Path, suffix: &str, dest: &Path) -> Result<(), String> {
     let file = fs::File::open(zip_path).map_err(|e| format!("abrir zip: {e}"))?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("zip inválido: {e}"))?;
@@ -332,11 +298,6 @@ fn extract_entry(zip_path: &Path, suffix: &str, dest: &Path) -> Result<(), Strin
     }
     Err(format!("no se encontró '{suffix}' en el zip"))
 }
-
-// ---------------------------------------------------------------------------
-// Scripts de las tareas programadas (se escriben al instalar, la acción de la
-// tarea es fija; la sesión cambia vía config.json / targets.txt)
-// ---------------------------------------------------------------------------
 fn write_task_scripts() -> Result<(), String> {
     let base = crate::config::launcher_data_dir();
     let dir = antilag_dir();
@@ -391,9 +352,6 @@ fn write_task_scripts() -> Result<(), String> {
     let _ = base_s;
     Ok(())
 }
-
-/// Registra las tareas On/Off elevadas (UAC una única vez). Devuelve true si
-/// quedaron registradas.
 pub fn install_tasks() -> Result<bool, String> {
     if tasks_registered() {
         return Ok(true);
@@ -415,16 +373,11 @@ pub fn install_tasks() -> Result<bool, String> {
     }
     Ok(tasks_registered())
 }
-
-// ---------------------------------------------------------------------------
-// Sesión: preparar targets + config y disparar On/Off
-// ---------------------------------------------------------------------------
 pub fn resolve_public_v4(host: &str) -> Vec<String> {
     let host = host.trim();
     if host.is_empty() {
         return Vec::new();
     }
-    // Quita un posible :puerto
     let host = if host.starts_with('[') {
         host.trim_start_matches('[').split(']').next().unwrap_or(host).to_string()
     } else {
@@ -470,9 +423,6 @@ pub fn resolve_public_v4(host: &str) -> Vec<String> {
     out.dedup();
     out
 }
-
-/// Genera config.json para la sesión (identidad + IPs del servidor) y
-/// targets.txt. Usa el endpoint v4 del peer para no depender de DNS.
 fn write_session_config(ips: &[String]) -> Result<(), String> {
     let ident = load_identity().ok_or_else(|| "no hay identidad WARP instalada".to_string())?;
     let ip_cidr: Vec<String> = ips.iter().map(|i| format!("{i}/32")).collect();
@@ -541,9 +491,6 @@ fn start_task(name: &str) -> Result<(), String> {
     }
     Ok(())
 }
-
-/// Enciende el túnel hacia los hosts del servidor y espera a que el proceso
-/// esté vivo (rutas ya aplicadas por la tarea). Devuelve cuántas IPs cubrió.
 pub fn start_tunnel(host: &str) -> Result<u32, String> {
     let ips = resolve_public_v4(host);
     if ips.is_empty() {
@@ -556,7 +503,6 @@ pub fn start_tunnel(host: &str) -> Result<u32, String> {
     }
     write_session_config(&ips)?;
     start_task(TASK_ON)?;
-    // Espera a que el proceso esté arriba (la tarea metió las rutas tras 4 s).
     for _ in 0..20 {
         if tunnel_active() {
             std::thread::sleep(std::time::Duration::from_millis(1500));
@@ -566,15 +512,9 @@ pub fn start_tunnel(host: &str) -> Result<u32, String> {
     }
     Err("El túnel no llegó a arrancar (mira antilag\\sing-box.log)".into())
 }
-
-/// Apaga el túnel y restaura las rutas.
 pub fn stop_tunnel() {
     let _ = start_task(TASK_OFF);
 }
-
-// ---------------------------------------------------------------------------
-// Instalación completa (comando Tauri)
-// ---------------------------------------------------------------------------
 pub async fn antilag_install(
     mut prog: impl FnMut(u32, String),
 ) -> Result<AntilagStatus, String> {

@@ -1,6 +1,3 @@
-//! Lanzamiento del juego: resolución de version.json (con herencia), construcción
-//! del classpath + command line, y proceso de Minecraft con consola en vivo.
-//! Port de kaz_launcher (subprocess launch) + minecraft_launcher_lib.
 use crate::config::instances_dir;
 use serde::Serialize;
 use std::collections::HashSet;
@@ -11,8 +8,6 @@ use std::sync::{Arc, Mutex};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use tauri::{AppHandle, Emitter};
-
-/// Estado de un proceso de juego lanzado.
 pub struct LaunchProcess {
     pub pid: u32,
     pub child: std::process::Child,
@@ -24,10 +19,6 @@ pub struct LaunchState {
 
 pub static LAUNCH_STATE: once_cell::sync::Lazy<Arc<Mutex<LaunchState>>> =
     once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(LaunchState { process: None })));
-
-// ---------------------------------------------------------------------------
-// Resolución de herencia de versions/<id>/<id>.json (fabric, vanilla, etc.)
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 struct LibraryEntry {
@@ -60,7 +51,6 @@ fn resolve_libraries(json: &serde_json::Value) -> Vec<LibraryEntry> {
                 .and_then(|p| p.as_str())
                 .map(String::from)
                 .or_else(|| {
-                    // Ruta implícita de Mojang: group/artifact/ver/artifact-ver.jar
                     let parts: Vec<&str> = name.splitn(3, ':').collect();
                     if parts.len() < 3 {
                         return None;
@@ -81,8 +71,6 @@ fn resolve_libraries(json: &serde_json::Value) -> Vec<LibraryEntry> {
     }
     out
 }
-
-/// Extrae jvm/game args del formato arguments.{jvm,game} (strings + objetos con rules).
 fn extract_args(json: &serde_json::Value) -> (Vec<String>, Vec<String>) {
     let mut jvm = Vec::new();
     let mut game = Vec::new();
@@ -109,8 +97,6 @@ fn extract_args(json: &serde_json::Value) -> (Vec<String>, Vec<String>) {
     }
     (jvm, game)
 }
-
-/// Nombre de OS en formato Mojang (windows/osx/linux).
 fn mojang_os() -> &'static str {
     match std::env::consts::OS {
         "windows" => "windows",
@@ -118,11 +104,6 @@ fn mojang_os() -> &'static str {
         _ => "linux",
     }
 }
-
-/// Aplica la semántica de reglas de Mojang a un argumento con "rules":
-/// se permite solo si la ÚLTIMA regla que coincida tiene action == "allow"
-/// (si ninguna coincide, no se incluye). Filtra así cosas como
-/// -XstartOnFirstThread (solo macOS) en Windows.
 fn arg_rules_allow(rules: &serde_json::Value) -> bool {
     let Some(arr) = rules.as_array() else { return true };
     let mut allowed = false;
@@ -137,7 +118,6 @@ fn arg_rules_allow(rules: &serde_json::Value) -> bool {
         if !os_ok || !arch_ok {
             continue;
         }
-        // Evaluar "features" (p. ej. is_demo_user, quick_play, has_custom_resolution)
         if let Some(features) = rule.get("features").and_then(|f| f.as_object()) {
             let mut feat_ok = true;
             for (k, v) in features {
@@ -161,8 +141,6 @@ fn arg_rules_allow(rules: &serde_json::Value) -> bool {
     }
     matched && allowed
 }
-
-/// Devuelve los values de un argumento si sus reglas permiten (o no hay reglas).
 fn arg_values(arg: &serde_json::Value) -> Vec<String> {
     if let Some(s) = arg.as_str() {
         return vec![s.to_string()];
@@ -187,8 +165,6 @@ fn arg_values(arg: &serde_json::Value) -> Vec<String> {
     }
     out
 }
-
-/// Carga la cadena de versiones con sus JSON (child -> parent).
 fn load_version_chain(
     instance_dir: &Path,
     version_id: &str,
@@ -226,16 +202,12 @@ fn resolve_version(instance_dir: &Path, version_id: &str) -> Result<ResolvedVers
     let mut game_args: Vec<String> = Vec::new();
     let mut client_jar_path = String::new();
     let mut extra_jars: Vec<String> = Vec::new();
-
-    // Librerías y args: se acumulan (padre -> hijo) y se mezclan.
     for json in chain.iter().rev() {
         let (j, g) = extract_args(json);
         jvm_args.extend(j);
         game_args.extend(g);
         libraries.extend(resolve_libraries(json));
     }
-    // mainClass: gana el hijo (fabric/forge ponen suuncher propio, p.ej. KnotClient
-    // o cpw.mods.bootstraplauncher.BootstrapLauncher).
     for json in chain.iter() {
         if let Some(mc) = json.get("mainClass").and_then(|m| m.as_str()) {
             if !mc.is_empty() {
@@ -245,7 +217,6 @@ fn resolve_version(instance_dir: &Path, version_id: &str) -> Result<ResolvedVers
         }
     }
     let versions_dir = instance_dir.join("versions");
-    // JAR del juego base (vanilla), el que descarga install_game.
     if let Some(base) = chain.last() {
         let base_id = base.get("id").and_then(|i| i.as_str()).unwrap_or(version_id);
         client_jar_path = versions_dir
@@ -254,7 +225,6 @@ fn resolve_version(instance_dir: &Path, version_id: &str) -> Result<ResolvedVers
             .to_string_lossy()
             .to_string();
     }
-    // JAR propio del loader (fabric: versions/<id_loader>/<id_loader>.jar).
     if let Some(hijo) = chain.first() {
         let id = hijo.get("id").and_then(|i| i.as_str()).unwrap_or(version_id);
         if id != chain.last().and_then(|b| b.get("id")).and_then(|i| i.as_str()).unwrap_or("") {
@@ -278,10 +248,6 @@ fn resolve_version(instance_dir: &Path, version_id: &str) -> Result<ResolvedVers
     })
 }
 
-// ---------------------------------------------------------------------------
-// Classpath y command line
-// ---------------------------------------------------------------------------
-
 fn build_classpath(resolved: &ResolvedVersion, instance_dir: &Path) -> String {
     let mut cp_paths = Vec::new();
     let libs_base = instance_dir.join("libraries");
@@ -291,12 +257,6 @@ fn build_classpath(resolved: &ResolvedVersion, instance_dir: &Path) -> String {
             cp_paths.push(full.to_string_lossy().to_string());
         }
     }
-    // Forge/NeoForge modernos (1.13+): el jar vanilla versions/<mc>/<mc>.jar NO
-    // puede ir al classpath. Las clases del juego las aporta el client-*-srg.jar
-    // que modlauncher descubre en libraries/ y nombra módulo "minecraft"; si
-    // además metemos el jar vanilla (módulo "_1._20._1" por su nombre de fichero)
-    // ambos exportan net.minecraft.* y la resolución de módulos aborta
-    // (p. ej. con mods que requieren el paquete net.minecraft.server / net.minecraft.data).
     let is_forge_or_neoforge = resolved.main_class.contains("bootstraplauncher")
         || resolved.main_class.contains("modlauncher")
         || resolved.id.to_lowercase().contains("forge");
@@ -352,8 +312,6 @@ fn build_launch_command(
 ) -> Vec<String> {
     let mut cmd = Vec::new();
     cmd.push(java_path.to_string());
-
-    // Flags JVM optimizados por versión
     let meta = crate::instances::load_meta(instance_dir);
     let mod_count = crate::jvm::count_mods(instance_dir);
     let java_major = crate::java::required_java_major_heuristic(&meta.game_version);
@@ -362,24 +320,17 @@ fn build_launch_command(
     cmd.extend(flags);
     cmd.push(format!("-Xmx{ram_max_mb}M"));
     cmd.push(format!("-Xms{ram_min_mb}M"));
-
-    // Classpath (necesario para expandir ${classpath} en los args JVM de Forge)
     let cp = build_classpath(resolved, instance_dir);
 
     let game_dir = instance_dir.to_string_lossy().to_string();
     let assets_root = instance_dir.join("assets").to_string_lossy().to_string();
     let natives_dir = instance_dir.join("natives").to_string_lossy().to_string();
     let libraries_dir = instance_dir.join("libraries").to_string_lossy().to_string();
-
-    // Expande TODOS los placeholders, también en los args JVM del JSON
-    // (Forge usa ${library_directory}/${classpath}/${classpath_separator} en -p y
-    // en -DlegacyClassPath; sin expandirlos el módulo no resuelve y la JVM aborta).
     let expander = |arg: &mut String| {
         *arg = arg.replace("${auth_player_name}", &account.name);
         *arg = arg.replace("${auth_uuid}", &account.id.replace('-', ""));
         *arg = arg.replace("${auth_access_token}", &account.access_token);
         *arg = arg.replace("${user_properties}", "{}");
-        // Sin token = sesión offline (legacy); con token = cuenta Microsoft (msa)
         let user_type = if account.access_token.is_empty() {
             "legacy"
         } else {
@@ -391,11 +342,9 @@ fn build_launch_command(
         *arg = arg.replace("${assets_root}", &assets_root);
         *arg = arg.replace("${game_assets}", &assets_root);
         *arg = arg.replace("${version_name}", &resolved.id);
-        // placeholders fabric
         *arg = arg.replace("${fabric_classpath_path}", &cp);
-        *arg = arg.replace("${launcher_name}", "PauLauncher");
+        *arg = arg.replace("${launcher_name}", "NexusLauncher");
         *arg = arg.replace("${launcher_version}", "0.1");
-        // placeholders forge/legacy
         *arg = arg.replace("${natives_directory}", &natives_dir);
         *arg = arg.replace("${classpath}", &cp);
         *arg = arg.replace(
@@ -403,9 +352,8 @@ fn build_launch_command(
             if cfg!(target_os = "windows") { ";" } else { ":" },
         );
         *arg = arg.replace("${library_directory}", &libraries_dir);
-        // placeholders del game (el launcher oficial los sustituye/omite)
         *arg = arg.replace("${assets_index_name}", &meta.game_version);
-        *arg = arg.replace("${clientid}", "PauLauncher");
+        *arg = arg.replace("${clientid}", "NexusLauncher");
         *arg = arg.replace("${auth_xuid}", "");
         *arg = arg.replace("${resolution_width}", "1280");
         *arg = arg.replace("${resolution_height}", "720");
@@ -414,8 +362,6 @@ fn build_launch_command(
         *arg = arg.replace("${quickPlayMultiplayer}", "");
         *arg = arg.replace("${quickPlayRealms}", "");
     };
-
-    // Arguments JVM del JSON (herencia resuelta)
     let mut jvm_args = resolved.jvm_args.clone();
     for arg in &mut jvm_args {
         expander(arg);
@@ -426,18 +372,13 @@ fn build_launch_command(
         cmd.push("-cp".to_string());
         cmd.push(cp.clone());
     }
-
-    // Main class
     if !resolved.main_class.is_empty() {
         cmd.push(resolved.main_class.clone());
     }
-
-    // Game args con expansión de placeholders
     let mut game_args = resolved.game_args.clone();
     for arg in &mut game_args {
         expander(arg);
     }
-    // --width/--height: no los forzamos (que el juego use opciones.txt).
     let mut filtered: Vec<String> = Vec::with_capacity(game_args.len());
     let mut skip_next = false;
     for a in game_args {
@@ -455,19 +396,11 @@ fn build_launch_command(
     cmd
 }
 
-// ---------------------------------------------------------------------------
-// Ejecución y consola en vivo
-// ---------------------------------------------------------------------------
-
 #[derive(Clone, Serialize)]
 pub struct LogLine {
     pub line: String,
     pub stream: String, // stdout | stderr
 }
-
-/// Lanza Minecraft como proceso hijo del launcher. Devuelve el PID.
-/// La RAM (mín y máx) se aplica automáticamente según la instancia: usa la
-/// recomendación del manifest del owner si existe; si no, heurística por mods.
 pub fn launch_minecraft(
     app: AppHandle,
     instance_name: &str,
@@ -497,11 +430,6 @@ pub fn launch_minecraft(
         ram_min_mb,
         ram_max_mb,
     );
-
-    // Modo antilag: el túnel WARP cubre solo las IPs públicas del servidor
-    // configurado. Se enciende ANTES del juego para que las rutas ya estén
-    // puestas cuando Minecraft intente conectar. Si falla, el juego sale por
-    // la red normal (solo se avisa por consola).
     let settings = crate::config::Settings::load();
     if settings.antilag_enabled && !settings.antilag_host.trim().is_empty() {
         match crate::antilag::start_tunnel(&settings.antilag_host) {
@@ -532,8 +460,6 @@ pub fn launch_minecraft(
 
     let stamp = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
     fs::write(instance_dir.join("last_launched.txt"), stamp).ok();
-
-    // Actualizar Rich Presence en Discord
     crate::discord::set_playing(instance_name, &meta.game_version, &meta.loader);
 
     let started = std::time::Instant::now();
@@ -555,7 +481,6 @@ pub fn launch_minecraft(
                 );
             }
             let _ = app2.emit("launch/exit", pid);
-            // El juego terminó (o se detuvo): apaga el túnel antilag y restaura Discord.
             crate::antilag::stop_tunnel();
             crate::discord::set_launcher_idle();
         });

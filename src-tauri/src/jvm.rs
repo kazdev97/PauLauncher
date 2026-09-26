@@ -1,5 +1,3 @@
-//! Flags JVM de optimización por versión (port directo de core/jvm_optimizer.py).
-//! Genera flags adaptativos según Java version, RAM, mod count y streamer_mode.
 
 pub fn count_mods(instance_dir: &std::path::Path) -> usize {
     let mods_dir = instance_dir.join("mods");
@@ -27,12 +25,9 @@ pub fn system_cpu_cores() -> u32 {
         .map(|n| n.get() as u32)
         .unwrap_or(4)
 }
-
-/// MB totales de RAM del sistema.
 pub fn system_total_ram_mb() -> u64 {
     #[cfg(target_os = "windows")]
     {
-        // GlobalMemoryStatusEx
         #[repr(C)]
         struct MemoryStatusEx {
             dw_length: u32,
@@ -71,8 +66,6 @@ pub fn system_total_ram_mb() -> u64 {
         8192
     }
 }
-
-/// Información resumida para la UI (Ajustes).
 #[derive(serde::Serialize)]
 pub struct SystemInfo {
     pub cpu_cores: u32,
@@ -85,8 +78,6 @@ pub fn system_info() -> SystemInfo {
         total_ram_mb: system_total_ram_mb(),
     }
 }
-
-/// RAM por defecto (min, max en MB) según la RAM total y el nº de mods.
 fn default_ram(total_ram_mb: u64, mod_count: usize) -> (u32, u32) {
     let total_gb = (total_ram_mb / 1024).max(8) as f64;
     let alloc_gb = if mod_count >= 150 {
@@ -102,9 +93,6 @@ fn default_ram(total_ram_mb: u64, mod_count: usize) -> (u32, u32) {
     let min_mb = (max_mb / 4).clamp(1024, 4096);
     (min_mb, max_mb)
 }
-
-/// RAM final para una instancia: la recomendada por el manifest (del owner)
-/// si existe; si no, la heurística local por nº de mods y RAM del sistema.
 pub fn resolved_ram(instance_dir: &std::path::Path) -> (u32, u32) {
     let mods = count_mods(instance_dir);
     let (fallback_min, fallback_max) = default_ram(system_total_ram_mb(), mods);
@@ -117,9 +105,6 @@ pub fn resolved_ram(instance_dir: &std::path::Path) -> (u32, u32) {
         None => (fallback_min, fallback_max),
     }
 }
-
-/// Recomendación de RAM para la UI (slider de Ajustes): RAM total del equipo
-/// y rango recomendado para la instancia seleccionada.
 #[derive(serde::Serialize)]
 pub struct RamRecommend {
     pub total_ram_gb: u32,
@@ -139,16 +124,12 @@ pub fn ram_recommend(instance_name: &str) -> Result<RamRecommend, String> {
         max_mb,
     })
 }
-
-/// RAM máxima efectiva para lanzar: si el usuario fijó max_ram_mb en Ajustes
-/// (slider manual) se usa ese valor; si no, la recomendación automática.
 pub fn effective_max_ram(instance_dir: &std::path::Path) -> (u32, u32) {
     let (mut min_mb, mut max_mb) = resolved_ram(instance_dir);
     let settings = crate::config::Settings::load();
     if settings.max_ram_mb > 0 {
         max_mb = settings.max_ram_mb.min(system_total_ram_mb() as u32);
     }
-    // Blinda los valores: nunca Xmx < 1 GB y nunca Xms > Xmx.
     if max_mb < 1024 {
         max_mb = 1024;
     } else if max_mb > system_total_ram_mb() as u32 {
@@ -159,8 +140,6 @@ pub fn effective_max_ram(instance_dir: &std::path::Path) -> (u32, u32) {
     }
     (min_mb, max_mb)
 }
-
-/// Genera flags optimizados de JVM (port de generate_optimized_jvm_flags).
 pub fn generate_jvm_flags(
     java_major: u32,
     memory_gb: u32,
@@ -170,16 +149,12 @@ pub fn generate_jvm_flags(
     let mut flags = Vec::new();
     let cpu_cores = system_cpu_cores();
     let use_zgc = java_major >= 21 && memory_gb >= 12 && mod_count >= 150;
-
-    // 1. GC
     if use_zgc {
         flags.push("-XX:+UseZGC".to_string());
         flags.push("-XX:+ZGenerational".to_string());
     } else {
         flags.push("-XX:+UseG1GC".to_string());
     }
-
-    // 2. CPU thread allocation (streamer-friendly)
     let (parallel_threads, conc_threads) = if streamer_mode {
         if cpu_cores <= 4 {
             (2.max(cpu_cores - 1), 1)
@@ -198,8 +173,6 @@ pub fn generate_jvm_flags(
     };
     flags.push(format!("-XX:ParallelGCThreads={}", parallel_threads));
     flags.push(format!("-XX:ConcGCThreads={}", conc_threads));
-
-    // 3. G1GC tuning (si no es ZGC)
     if !use_zgc {
         flags.push("-XX:+ParallelRefProcEnabled".to_string());
         flags.push("-XX:MaxGCPauseMillis=200".to_string());
@@ -232,8 +205,6 @@ pub fn generate_jvm_flags(
         flags.push("-XX:SurvivorRatio=32".to_string());
         flags.push("-XX:MaxTenuringThreshold=1".to_string());
     }
-
-    // 4. Metaspace
     flags.push("-XX:+PerfDisableSharedMem".to_string());
     flags.push("-XX:+UseCompressedOops".to_string());
     flags.push("-XX:+UseCompressedClassPointers".to_string());
@@ -246,8 +217,6 @@ pub fn generate_jvm_flags(
         flags.push("-XX:MetaspaceSize=128M".to_string());
         flags.push("-XX:MaxMetaspaceSize=512M".to_string());
     }
-
-    // 5. Java version specifics
     if java_major <= 8 {
         flags.push("-XX:+UseFastUnorderedTimeStamps".to_string());
     }
@@ -255,8 +224,6 @@ pub fn generate_jvm_flags(
         flags.push("-XX:+EnableVectorSupport".to_string());
         flags.push("-XX:+UseFMA".to_string());
     }
-
-    // 6. System defaults
     flags.push("-Djava.net.preferIPv4Stack=true".to_string());
     flags.push("-Dfile.encoding=UTF-8".to_string());
     flags.push("-Djava.awt.headless=false".to_string());

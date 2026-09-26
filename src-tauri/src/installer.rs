@@ -1,9 +1,3 @@
-//! Instalador de versiones Vanilla / Fabric / Forge dentro de una instancia
-//! (port de utils/auto_install_utils/.py y la lógica de instalación de KazLauncher).
-//! Estructura por instancia (modelo Kaz):
-//!   versions/<id>/<id>.json + <id>.jar
-//!   assets/indexes/<id>.json + assets/objects/<h1>/<h2>/<hash>
-//!   libraries/<classpath> de todas las librerías
 use crate::downloader::{download_file, get_json, get_text, http_client};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -15,11 +9,7 @@ use std::os::windows::process::CommandExt;
 
 const VERSIONS_MANIFEST: &str = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
 const FABRIC_META: &str = "https://meta.fabricmc.net/v2";
-
-/// Callback de progreso de instalación: (porcentaje global 0-100, mensaje).
 pub type InstallProgress<'a> = dyn FnMut(u32, String) + Send + 'a;
-
-/// Filtra las llamadas al progreso repetidas (solo emite cuando cambia el %).
 struct PctThrottle<'a> {
     cb: &'a mut (dyn FnMut(u32, String) + Send),
     last: u32,
@@ -44,8 +34,6 @@ pub struct VersionOverview {
     #[serde(default)]
     pub release_time: String,
 }
-
-/// Lista de versiones vanilla instalables (port de get_installable_versions).
 pub async fn get_vanilla_versions() -> Result<Vec<VersionOverview>, String> {
     let client = http_client();
     let root: Value = get_json(&client, VERSIONS_MANIFEST, Duration::from_secs(30))
@@ -71,8 +59,6 @@ pub async fn get_vanilla_versions() -> Result<Vec<VersionOverview>, String> {
     }
     Ok(out)
 }
-
-/// Loaders disponibles para un juego (fabric: loaders + installers).
 pub async fn get_fabric_loaders() -> Result<Vec<String>, String> {
     let client = http_client();
     let list: Vec<Value> = get_json::<Vec<Value>>(
@@ -96,8 +82,6 @@ fn ensure_subdirs(instance_dir: &Path) {
         fs::create_dir_all(instance_dir.join(sub)).ok();
     }
 }
-
-/// Descarga y valida un JSON de versión (con herencia).
 async fn fetch_version_json(instance_dir: &Path, url: &str, id: &str) -> Result<Value, String> {
     let client = http_client();
     let text = get_text(&client, url, Duration::from_secs(60))
@@ -159,7 +143,6 @@ fn maven_path_from_name(name: &str) -> Option<PathBuf> {
     let group = parts[0].replace('.', "/");
     let artifact = parts[1];
     let ver = parts[2];
-    // Si hay classifier (name = group:artifact:ver:classifier), va al final del jar
     if ver.contains(':') {
         let vp: Vec<&str> = ver.splitn(2, ':').collect();
         let (ver_only, classifier) = (vp[0], vp[1]);
@@ -189,8 +172,6 @@ async fn download_library(client: &reqwest::Client, lib: &Value, base: &Path) ->
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).ok();
         }
-        // Fuentes: URL explícita del json, y si no (legacy/Forge pre-1.13),
-        // la ruta Maven implícita en varios repositorios.
         let mut sources: Vec<String> = Vec::new();
         if !url.is_empty() {
             sources.push(url.to_string());
@@ -216,9 +197,6 @@ async fn download_library(client: &reqwest::Client, lib: &Value, base: &Path) ->
     }
     Ok(())
 }
-
-/// Descarga y extrae las natives (p. ej. LWJGL) a natives/ desde el payload
-/// classifiers."natives-windows" (formato de Mojang moderno).
 async fn download_natives(client: &reqwest::Client, lib: &Value, libs_base: &Path, natives_dir: &Path) {
     let Some(classifiers) = lib.get("downloads").and_then(|d| d.get("classifiers")) else {
         return;
@@ -251,8 +229,6 @@ async fn download_natives(client: &reqwest::Client, lib: &Value, libs_base: &Pat
     }
     extract_zip_to(&jar, natives_dir);
 }
-
-/// Extrae el contenido de un jar/zip (saltando META-INF) a un directorio.
 fn extract_zip_to(jar: &Path, dest: &Path) {
     let Ok(file) = std::fs::File::open(jar) else { return };
     let Ok(mut archive) = zip::ZipArchive::new(file) else { return };
@@ -278,8 +254,6 @@ fn extract_zip_to(jar: &Path, dest: &Path) {
         }
     }
 }
-
-/// Instala el juego vanilla (json + client jar + assets + librerías).
 pub async fn install_game(
     instance_dir: &Path,
     game_version: &str,
@@ -288,8 +262,6 @@ pub async fn install_game(
     ensure_subdirs(instance_dir);
     let client = http_client();
     let mut throttle = PctThrottle::new(on_progress);
-
-    // 1. Manifest de versiones -> URL del json concreto
     throttle.emit(1, "Obteniendo manifiesto de versiones...".to_string());
     let root: Value = get_json(&client, VERSIONS_MANIFEST, Duration::from_secs(60)).await
         .map_err(|e| format!("obtener manifest mojang: {e}"))?;
@@ -303,8 +275,6 @@ pub async fn install_game(
         })
         .and_then(|v| v.get("url").and_then(|u| u.as_str()))
         .ok_or_else(|| format!("Versión de Minecraft '{game_version}' no encontrada"))?;
-
-    // 2. Json completo de la versión (fuerza la base vanilla si hay herencia)
     let mut current = fetch_version_json(instance_dir, url, game_version).await?;
     let mut inherits = current.get("inheritsFrom").and_then(|i| i.as_str()).map(String::from);
     while let Some(parent_id) = inherits {
@@ -322,8 +292,6 @@ pub async fn install_game(
             .and_then(|i| i.as_str())
             .map(String::from);
     }
-
-    // 3. Client jar (marca un bloque 5..12 con progreso real por bytes)
     if let Some(client_url) = current
         .get("downloads")
         .and_then(|d| d.get("client"))
@@ -357,8 +325,6 @@ pub async fn install_game(
             .map_err(|e| format!("descargar client jar: {e}"))?;
         }
     }
-
-    // 4. Asset index + objetos (12..40 por objeto)
     if let Some(index) = current.get("assetIndex").and_then(|i| i.get("url")).and_then(|u| u.as_str()) {
         let asset_id = current
             .get("assets")
@@ -368,8 +334,6 @@ pub async fn install_game(
         throttle.emit(12, "Descargando índice de assets...".to_string());
         download_asset_index(instance_dir, index, &asset_id, &mut *throttle.cb).await?;
     }
-
-    // 5. Librerías vanilla (40..70)
     if let Some(libs) = current.get("libraries").and_then(|l| l.as_array()) {
         let n = libs.len().max(1);
         for (i, lib) in libs.iter().enumerate() {
@@ -417,8 +381,6 @@ pub fn rules_allow(lib: &Value) -> bool {
     }
     has_pos_allow && allow
 }
-
-/// Instala Fabric sobre un vanilla ya presente (descarga el perfil de meta.fabricmc.net).
 pub async fn install_fabric(
     instance_dir: &Path,
     game_version: &str,
@@ -434,14 +396,10 @@ pub async fn install_fabric(
     let text = get_text(&client, &url, Duration::from_secs(60)).await
         .map_err(|e| format!("descargar perfil fabric: {e}"))?;
     let profile: Value = serde_json::from_str(&text).map_err(|e| format!("perfil fabric inválido: {e}"))?;
-
-    // id, p.ej. 1.21-fabric-0.16.x
     let id = profile.get("id").and_then(|i| i.as_str()).unwrap_or(game_version).to_string();
     let dir = instance_dir.join("versions").join(&id);
     fs::create_dir_all(&dir).map_err(|e| format!("crear dir fabric: {e}"))?;
     fs::write(dir.join(format!("{id}.json")), &text).map_err(|e| format!("guardar perfil fabric: {e}"))?;
-
-    // Descargar el jar del loader: se obtiene de la librería fabric-loader
     if let Some(libs) = profile.get("libraries").and_then(|l| l.as_array()) {
         for lib in libs {
             let name = lib.get("name").and_then(|n| n.as_str()).unwrap_or("");
@@ -459,9 +417,6 @@ pub async fn install_fabric(
     throttle.emit(85, "Loader fabric instalado".to_string());
     Ok(format!("{id}.json"))
 }
-
-/// Lista las versiones de Forge publicadas en maven.minecraftforge.net que
-/// corresponden a una versión de Minecraft (p.ej. "1.20.1-47.4.10").
 pub async fn get_forge_versions(game_version: &str) -> Result<Vec<String>, String> {
     let mut out = fetch_maven_versions(
         "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml",
@@ -471,11 +426,6 @@ pub async fn get_forge_versions(game_version: &str) -> Result<Vec<String>, Strin
     out.retain(|v| v.starts_with(&prefix));
     Ok(out)
 }
-
-/// Lista las versiones de NeoForge para una versión de Minecraft, combinando
-/// los dos repositorios de maven.neoforged.net:
-///   - net/neoforged/forge   (era transitoria: 1.20.1-47.1.x, 1.20.2-20.2.x)
-///   - net/neoforged/neoforge (era estable: versiones "21.1.x", "20.4.x"...)
 pub async fn get_neoforge_versions(game_version: &str) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let mut transitional = fetch_maven_versions(
@@ -486,8 +436,6 @@ pub async fn get_neoforge_versions(game_version: &str) -> Result<Vec<String>, St
     let prefix = format!("{game_version}-");
     transitional.retain(|v| v.starts_with(&prefix));
     out.extend(transitional);
-
-    // Era estable: p.ej. version "21.4.x" -> MC "1.21.4". Derivamos el prefijo.
     if let Some(neo_prefix) = neoforge_zero_prefix(game_version) {
         let mut stable = fetch_maven_versions(
             "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml",
@@ -500,14 +448,10 @@ pub async fn get_neoforge_versions(game_version: &str) -> Result<Vec<String>, St
     out.dedup();
     Ok(out)
 }
-
-/// Convierte "1.21.4" -> "21.4." (prefijo de versiones estables de NeoForge).
 fn neoforge_zero_prefix(game_version: &str) -> Option<String> {
     let rest = game_version.strip_prefix("1.")?;
     Some(format!("{rest}."))
 }
-
-/// Descarga y parsea un maven-metadata.xml (lista simple de <version>).
 async fn fetch_maven_versions(url: &str) -> Result<Vec<String>, String> {
     let client = http_client();
     let xml = get_text(&client, url, Duration::from_secs(30))
@@ -526,10 +470,6 @@ async fn fetch_maven_versions(url: &str) -> Result<Vec<String>, String> {
     }
     Ok(out)
 }
-
-/// Instala Forge (cualquier versión) sobre un vanilla ya presente.
-/// Compatible con instaladores modernos (1.13+, `version.json` dentro del jar)
-/// y legacy (1.7.10-1.12.2, `install_profile.json` -> versionInfo).
 pub async fn install_forge(
     instance_dir: &Path,
     game_version: &str,
@@ -538,8 +478,6 @@ pub async fn install_forge(
 ) -> Result<String, String> {
     install_simple_installer("forge", instance_dir, game_version, loader_version, on_progress).await
 }
-
-/// Instala NeoForge (era transitoria y estable) sobre un vanilla ya presente.
 pub async fn install_neoforge(
     instance_dir: &Path,
     game_version: &str,
@@ -549,12 +487,6 @@ pub async fn install_neoforge(
     install_simple_installer("neoforge", instance_dir, game_version, loader_version, on_progress)
         .await
 }
-
-/// Instalador común de Forge/NeoForge. Tanto los instaladores modernos
-/// (1.13+) como los legacy (1.7.10-1.12.2) comparten SimpleInstaller:
-/// `java -jar <instalador> --installClient <directorio>` y escriben el perfil
-/// de lanzamiento en versions/<id>/<id>.json. Los modernos además generan los
-/// jars de runtime (client-srg/extra/forge-client) procesando el jar vanilla.
 async fn install_simple_installer(
     kind: &str,
     instance_dir: &Path,
@@ -569,10 +501,6 @@ async fn install_simple_installer(
     throttle.emit(72, format!("Descargando el instalador de {label}..."));
     let cache_dir = instance_dir.join(".cache");
     fs::create_dir_all(&cache_dir).ok();
-
-    // Posibles URLs del instalador. Probar variantes de id (mc-ver y ver suelta)
-    // porque NeoForge estable usa versiones sueltas ("21.4.235") y el resto
-    // "1.21.4-21.4.235".
     let mut version_variants = vec![version.clone()];
     if !version_variants.contains(&loader_version.to_string()) {
         version_variants.push(loader_version.to_string());
@@ -594,7 +522,6 @@ async fn install_simple_installer(
             cache_dir.join(format!("forge-{v}-installer.jar")),
         ));
     }
-    // maven.minecraftforge.net (Forge clásico)
     for v in &version_variants {
         candidates.push((
             format!("https://maven.minecraftforge.net/net/minecraftforge/forge/{v}/forge-{v}-installer.jar"),
@@ -617,9 +544,6 @@ async fn install_simple_installer(
     let installer_jar = installer_jar.ok_or_else(|| {
         format!("no se pudo descargar el instalador de {label} para '{loader_version}'")
     })?;
-
-    // Perfil de lanzamiento: los instaladores modernos llevan `version.json`;
-    // los legacy llevan `install_profile.json` con el perfil en `versionInfo`.
     let mut profile_text: Option<String> = None;
     {
         use std::io::Read;
@@ -680,11 +604,6 @@ async fn install_simple_installer(
             );
         }
     }
-
-    // 4. Generar los jars de runtime (client-srg/extra/client.jar) en los
-    //    instaladores modernos procesando el jar vanilla. En los legacy
-    //    (1.7.10-1.12.2) el jar lo da el universal. Se ejecuta headless:
-    //    `java -jar instalador.jar --installClient <instancia>`.
     throttle.emit(86, format!("Generando los jars de {label} (instalador)..."));
     let java = crate::java::ensure_java(
         game_version,
@@ -695,9 +614,6 @@ async fn install_simple_installer(
     )
     .await?;
     throttle.emit(87, format!("Ejecutando el instalador de {label}..."));
-    // El instalador espera una raíz con estructura de launcher oficial:
-    // `launcher_profiles.json` + versions/ + libraries/. Sin ese archivo
-    // aborta con "There is no minecraft launcher profile".
     let launcher_profiles = instance_dir.join("launcher_profiles.json");
     if !launcher_profiles.exists() {
         fs::write(
@@ -706,8 +622,6 @@ async fn install_simple_installer(
         )
         .map_err(|e| format!("crear launcher_profiles.json: {e}"))?;
     }
-    // `--installClient` RECIBE el directorio destino como valor del flag
-    // (no existe --clientInstallLocation en Forge/NeoForge).
     let mut cmd = std::process::Command::new(&java);
     cmd.arg("-Djava.awt.headless=true")
         .arg("-jar")
@@ -732,10 +646,6 @@ async fn install_simple_installer(
             lines.iter().rev().take(14).rev().cloned().collect::<Vec<_>>().join("\n");
         return Err(format!("El instalador de {label} falló:\n{snippet}"));
     }
-
-    // 5. Comprobar que se generaron los artefactos de runtime. Los modernos
-    //    crean client-*-srg.jar (necesario para el módulo de launcher); los
-    //    legacy dejan el jar universal/client del loader.
     let srg_ok = fs::read_dir(
         instance_dir.join("libraries").join("net").join("minecraft").join("client"),
     )
@@ -776,21 +686,13 @@ async fn install_simple_installer(
     throttle.emit(90, format!("{label} instalado"));
     Ok(format!("{id}.json"))
 }
-
-/// Punto de entrada: instala la instancia completa según su meta
-/// (vanilla, fabric, forge o neoforge).
 pub async fn install_instance(
     instance_dir: &Path,
     on_progress: &mut InstallProgress<'_>,
 ) -> Result<String, String> {
     let meta = crate::instances::load_meta(instance_dir);
     ensure_subdirs(instance_dir);
-
-    // 1. Juego base
     install_game(instance_dir, &meta.game_version, on_progress).await?;
-
-    // 2. Loader (si la versión no viene en el metadata, elegir la última
-    //    publicada compatible con la versión de Minecraft).
     let loader = meta.loader.to_lowercase();
     let loader_version = if meta.loader_version.trim().is_empty() {
         match loader.as_str() {

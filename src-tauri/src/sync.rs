@@ -1,12 +1,3 @@
-//! Motor de sincronización controlado por el OWNER.
-//!
-//! El owner publica un `manifest.json` (pequeño, textual) más un `archivo.zip`
-//! con el contenido de la instancia (mods, configs, resourcepacks...). El launcher
-//! del jugador compara su instancia contra el manifest y aplica las diferencias
-//! de forma VISIBLE: descarga reemplaza/elimina archivos, hace backup previo y
-//! permite rollback. Nada se ejecuta en segundo plano sin confirmación.
-//!
-//! Port y generalización de core/instance_sync.py + core/remote_url.py de KazLauncher.
 
 use crate::config::instances_dir;
 use crate::downloader::{download_file, sha256_file, http_client};
@@ -17,9 +8,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub const MANIFEST_FORMAT: &str = "pau-manifest";
-
-/// Una instancia tal y como aparece en el índice remoto (source).
-/// `installed` lo rellena la UI comparando con las instancias locales.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceInstance {
     #[serde(default)]
@@ -40,7 +28,6 @@ pub struct SourceInstance {
     pub revision: String,
     #[serde(default)]
     pub installed: bool,
-    // Modo repo Git (la instancia en sí es una carpeta del repositorio).
     #[serde(default)]
     pub github_repo: String,
     #[serde(default)]
@@ -48,8 +35,6 @@ pub struct SourceInstance {
     #[serde(default)]
     pub github_branch: String,
 }
-
-/// Carpetas protegidas: nunca se tocan, se descargan ni se eliminan.
 pub fn default_protected() -> Vec<String> {
     vec![
         "saves".to_string(),
@@ -64,8 +49,6 @@ pub fn default_protected() -> Vec<String> {
         "options.txt".to_string(),
     ]
 }
-
-/// Carpetas gestionadas por el manifest (donde se aplican diffs).
 pub fn default_managed() -> Vec<String> {
     vec!["mods".to_string(), "config".to_string(), "resourcepacks".to_string()]
 }
@@ -131,10 +114,6 @@ pub struct SyncResult {
     pub backup_dir: String,
     pub errors: Vec<String>,
 }
-
-// ---------------------------------------------------------------------------
-// Resolución de URL de descarga (port de core/remote_url.py)
-// ---------------------------------------------------------------------------
 fn resolve_download_url(url: &str) -> String {
     let url = url.trim();
     if url.is_empty() {
@@ -204,10 +183,6 @@ fn resolve_google_drive(url: &str) -> String {
         url.to_string()
     }
 }
-
-// ---------------------------------------------------------------------------
-// Descarga / parseo del manifest
-// ---------------------------------------------------------------------------
 pub async fn fetch_manifest(url_or_path: &str) -> Result<Manifest, String> {
     let candidate_path = Path::new(url_or_path);
     let raw = if candidate_path.is_file() {
@@ -236,9 +211,6 @@ pub fn parse_manifest(raw: &str) -> Result<Manifest, String> {
     }
     Ok(manifest)
 }
-
-/// Extrae el primer bloque JSON ({...} o [...]) de un texto, ignorando líneas
-/// TXT previas (port de _extract_json_block de remote_modpack.py de Kaz).
 fn extract_json_block(text: &str) -> String {
     let text = text.trim();
     for (opener, closer) in [('{', '}'), ('[', ']')] {
@@ -272,9 +244,6 @@ fn extract_json_block(text: &str) -> String {
     }
     text.to_string()
 }
-
-/// Parsea un índice de instancias: una lista, un objeto con 'instances'/'modpacks',
-/// o un único manifest (se trataría como una sola instancia).
 pub fn parse_source_index(raw: &str) -> Result<Vec<SourceInstance>, String> {
     let value: serde_json::Value = match serde_json::from_str(raw.trim()) {
         Ok(v) => v,
@@ -305,8 +274,6 @@ pub fn parse_source_index(raw: &str) -> Result<Vec<SourceInstance>, String> {
     }
     Ok(out)
 }
-
-/// Descarga el índice de instancias disponibles desde la URL del source.
 pub async fn fetch_source_index(url: &str) -> Result<Vec<SourceInstance>, String> {
     let client = http_client();
     let resolved = resolve_download_url(url);
@@ -315,11 +282,6 @@ pub async fn fetch_source_index(url: &str) -> Result<Vec<SourceInstance>, String
         .map_err(|e| format!("descargar índice: {e}"))?;
     parse_source_index(&text)
 }
-
-/// Instala desde el source: crea la instancia, instala juego+loader y aplica el
-/// paquete del owner (zip + manifest). Port de install_modpack de remote_modpack.py.
-/// Si una instalación anterior quedó a medias (sin el juego base), la limpia y
-/// reintenta en lugar de bloquear con "ya existe".
 #[allow(clippy::too_many_arguments)]
 pub async fn install_remote_instance(
     name: &str,
@@ -351,7 +313,6 @@ pub async fn install_remote_instance(
         if finished {
             return Err(format!("Ya tienes instalada una instancia llamada '{clean}'"));
         }
-        // Quedó a medias (download fallido, cierre del launcher...): limpiar y reintentar.
         let _ = fs::remove_dir_all(&dir);
     }
     let dir = crate::instances::create_instance_dir(&req)?;
@@ -396,9 +357,6 @@ pub async fn install_remote_instance(
     }
     Ok(())
 }
-
-/// Guarda una copia del último manifest descargado para poder leer sus
-/// recomendaciones (RAM, etc.) al lanzar, sin necesidad de red.
 pub fn cache_manifest(instance_dir: &Path, manifest: &Manifest) {
     if let Ok(json) = serde_json::to_string_pretty(manifest) {
         fs::write(instance_dir.join("manifest_cache.json"), json).ok();
@@ -410,10 +368,6 @@ pub fn load_manifest_cache(instance_dir: &Path) -> Option<Manifest> {
     let text = fs::read_to_string(path).ok()?;
     serde_json::from_str(&text).ok()
 }
-
-// ---------------------------------------------------------------------------
-// Cálculo de diferencias
-// ---------------------------------------------------------------------------
 fn managed_folders(manifest: &Manifest) -> Vec<String> {
     if !manifest.managed.is_empty() {
         manifest.managed.clone()
@@ -435,8 +389,6 @@ fn is_managed(path: &str, managed: &[String]) -> bool {
     let top = path.split('/').next().unwrap_or("");
     managed.iter().any(|f| f == top)
 }
-
-/// Lista archivos de las carpetas gestionadas localmente.
 fn list_local_managed(instance_dir: &Path, managed: &[String]) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for folder in managed {
@@ -450,7 +402,6 @@ fn list_local_managed(instance_dir: &Path, managed: &[String]) -> Vec<(String, S
                 for entry in entries.flatten() {
                     let p = entry.path();
                     if p.is_dir() {
-                        // no bajar a subcarpetas protegidas
                         let top = p.strip_prefix(&dir).unwrap_or(&p);
                         if top.iter().count() > 12 {
                             continue;
@@ -469,8 +420,6 @@ fn list_local_managed(instance_dir: &Path, managed: &[String]) -> Vec<(String, S
     }
     out
 }
-
-/// Comprueba actualizaciones sin aplicar nada. Devuelve el diff.
 pub async fn check_updates(instance_dir: &Path, manifest_url: &str) -> Result<SyncDiff, String> {
     let manifest = fetch_manifest(manifest_url).await?;
     cache_manifest(instance_dir, &manifest);
@@ -482,8 +431,6 @@ pub fn compute_diff(instance_dir: &Path, manifest: &Manifest) -> SyncDiff {
     let local_revision = local_meta.server_version;
     let managed = managed_folders(manifest);
     let protected = protected_paths(manifest);
-
-    // Mapa manifest: path -> sha256 (solo archivos gestionados)
     let mut remote: std::collections::BTreeMap<String, String> = Default::default();
     for f in &manifest.files {
         if is_managed(&f.path, &managed) && !protected.contains(&f.path) {
@@ -542,17 +489,13 @@ pub fn compute_diff(instance_dir: &Path, manifest: &Manifest) -> SyncDiff {
         has_archive: !manifest.archive_url.is_empty(),
     }
 }
-
-// ---------------------------------------------------------------------------
-// Aplicación de actualizaciones (con backup previo para rollback)
-// ---------------------------------------------------------------------------
 async fn download_archive(
     manifest: &Manifest,
     instance_dir: &Path,
     on_status: &mut (dyn FnMut(String) + Send),
 ) -> Result<PathBuf, String> {
     let client = http_client();
-    let dest = instance_dir.join(".paulauncher_update.zip");
+    let dest = instance_dir.join(".nexuslauncher_update.zip");
     let resolved = resolve_download_url(&manifest.archive_url);
     on_status(format!(
         "Descargando actualización ({} archivos)...",
@@ -577,7 +520,6 @@ fn extract_zip_stripping(archive: &Path, target_root: &Path, strip_prefix: &str)
             continue;
         }
         let name = entry.mangled_name().to_string_lossy().replace('\\', "/");
-        // Quitar el prefijo del zip (files/ o la raíz del pack)
         let rel = if let Some(stripped) = name.strip_prefix(strip_prefix.trim_end_matches('/')) {
             stripped.trim_start_matches('/').to_string()
         } else {
@@ -617,8 +559,6 @@ pub async fn apply_updates(
 
     let managed = managed_folders(&manifest);
     let protected = protected_paths(&manifest);
-
-    // 1. Backup previo (carpetas gestionadas y meta)
     let revision_slug = if manifest.revision.is_empty() {
         chrono::Local::now().format("%Y%m%d_%H%M%S").to_string()
     } else {
@@ -641,8 +581,6 @@ pub async fn apply_updates(
     if meta_src.exists() {
         fs::copy(&meta_src, backup_dir.join(crate::config::INSTANCE_META_FILE)).ok();
     }
-
-    // 2. Obtener los ficheros actualizados (desde el zip o desde URLs individuales)
     let mut downloaded = Vec::new();
     let mut replaced = Vec::new();
     let mut errors = Vec::new();
@@ -650,18 +588,15 @@ pub async fn apply_updates(
     if !manifest.archive_url.is_empty() {
         let archive = download_archive(&manifest, instance_dir, on_status).await?;
         on_status("Aplicando cambios...".to_string());
-        let extract_root = instance_dir.join(".paulauncher_update");
+        let extract_root = instance_dir.join(".nexuslauncher_update");
         if extract_root.exists() {
             fs::remove_dir_all(&extract_root).ok();
         }
         fs::create_dir_all(&extract_root).ok();
-        // El zip del packer contiene 'files/<path>' o la raíz del pack directamente.
         if extract_zip_stripping(&archive, &extract_root, "files/").is_err() {
             extract_zip_stripping(&archive, &extract_root, "")?;
         }
         fs::remove_file(&archive).ok();
-
-        // Aplicar sólo lo que cambió o falta
         for f in &manifest.files {
             if !is_managed(&f.path, &managed) || protected.contains(&f.path) {
                 continue;
@@ -689,7 +624,6 @@ pub async fn apply_updates(
         }
         fs::remove_dir_all(&extract_root).ok();
     } else {
-        // Modo per-file: descargar cada archivo que cambió/falta
         let client = http_client();
         on_status("Descargando archivos individuales...".to_string());
         for f in &manifest.files {
@@ -724,8 +658,6 @@ pub async fn apply_updates(
             }
         }
     }
-
-    // 3. Eliminar sobrantes (prune) en carpetas gestionadas
     let mut removed = Vec::new();
     for path in &diff.extra {
         if protected.contains(path) {
@@ -737,11 +669,8 @@ pub async fn apply_updates(
                 removed.push(path.clone());
             }
         }
-        // limpiar directorios gestionados vacíos
         prune_empty_dirs(instance_dir, &managed);
     }
-
-    // 4. Guardar la revisión aplicada
     let mut meta = crate::instances::load_meta(instance_dir);
     meta.server_version = manifest.revision.clone();
     if let Err(e) = crate::instances::save_meta(instance_dir, &meta) {
@@ -810,8 +739,6 @@ fn prune_empty_dirs(instance_dir: &Path, managed: &[String]) {
         }
     }
 }
-
-/// Restaura un backup concreto (rollback).
 pub fn rollback(instance_dir: &Path, revision: &str) -> Result<SyncResult, String> {
     let backup_dir = instance_dir.join("backups").join(revision);
     if !backup_dir.exists() {
@@ -844,8 +771,6 @@ pub fn rollback(instance_dir: &Path, revision: &str) -> Result<SyncResult, Strin
         errors,
     })
 }
-
-/// Lista revisiones de backup disponibles.
 pub fn list_backups(instance_name: &str) -> Vec<String> {
     let dir = instances_dir().join(instance_name).join("backups");
     if !dir.exists() {
@@ -863,12 +788,6 @@ pub fn list_backups(instance_name: &str) -> Vec<String> {
     list.reverse();
     list
 }
-
-// ---------------------------------------------------------------------------
-// Modo "repo Git": el pack es una carpeta de un repositorio GitHub. El owner
-// sube cada cambio con un commit (el mensaje es la nota de qué cambió) y el
-// launcher usa el Compare API de GitHub para descargar SOLO lo modificado.
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 struct GitCtx {
@@ -918,9 +837,6 @@ fn sync_raw_url(ctx: &GitCtx, rel: &str) -> String {
     let base = base.trim_end_matches('/');
     format!("{}/{}", base, rel.replace('\\', "/").replace(' ', "%20"))
 }
-
-/// GitHub sirve los objetos LFS desde el host media (raw devuelve el puntero
-/// de texto). URL equivalente al raw para archivos guardados en Git LFS.
 fn lfs_media_url(ctx: &GitCtx, rel: &str) -> String {
     let base = format!(
         "https://media.githubusercontent.com/media/{}/{}/{}",
@@ -933,9 +849,6 @@ fn lfs_media_url(ctx: &GitCtx, rel: &str) -> String {
 }
 
 const LFS_POINTER_MAGIC: &[u8] = b"version https://git-lfs.github.com/spec/v1";
-
-/// True si el archivo empieza por la cabecera de puntero de Git LFS
-/// (es decir, raw.githubusercontent devolvió el puntero y no el contenido).
 fn is_lfs_pointer(path: &Path) -> bool {
     use std::io::Read;
     let Ok(mut f) = fs::File::open(path) else {
@@ -953,8 +866,6 @@ async fn git_api_get(url: &str) -> Result<serde_json::Value, String> {
     crate::downloader::get_json::<serde_json::Value>(&client, url, Duration::from_secs(30))
         .await
 }
-
-/// SHA del HEAD de la rama.
 async fn git_head_sha(ctx: &GitCtx) -> Result<String, String> {
     let url = format!("https://api.github.com/repos/{}/branches/{}", ctx.repo, ctx.branch);
     let v = git_api_get(&url).await.map_err(|e| format!("leer rama: {e}"))?;
@@ -963,8 +874,6 @@ async fn git_head_sha(ctx: &GitCtx) -> Result<String, String> {
         .map(|s| s.to_string())
         .ok_or_else(|| "respuesta de rama inválida".to_string())
 }
-
-/// Lista (path_rel, sha, size) de los blobs del repo bajo github_path.
 async fn git_tree(ctx: &GitCtx) -> Result<Vec<(String, String, u64)>, String> {
     let url = format!(
         "https://api.github.com/repos/{}/git/trees/{}?recursive=1",
@@ -1007,8 +916,6 @@ fn git_rev_display(head: &str, message: &str) -> String {
         format!("{short} · {first}")
     }
 }
-
-/// Calcula qué falta o cambió comparando el última HEAD aplicado con el actual.
 async fn git_pending(
     ctx: &GitCtx,
     meta: &crate::instances::InstanceMeta,
@@ -1026,14 +933,11 @@ async fn git_pending(
     }
 
     if base.is_empty() {
-        // Primera vez: todo lo de la repo es nuevo.
         for (rel, _, _) in git_tree(ctx).await? {
             missing.push(rel);
         }
         return Ok(GitPending { head, message, missing, different, extra });
     }
-
-    // Comparar los commits entre base y head.
     let url = format!(
         "https://api.github.com/repos/{}/compare/{}...{}",
         ctx.repo, base, head
@@ -1060,7 +964,6 @@ async fn git_pending(
             }
         }
         Err(_) => {
-            // base ya no existe (fuerce-push): re-descargar todo para volver a cuajar.
             for (rel, _, _) in git_tree(ctx).await? {
                 missing.push(rel);
             }
@@ -1076,8 +979,6 @@ fn is_git_protected(rel: &str, protected: &HashSet<String>) -> bool {
     let top = rel.split('/').next().unwrap_or("");
     protected.contains(rel) || protected.contains(top)
 }
-
-/// Check (sin aplicar nada) para instancias de repositorio.
 pub async fn git_check_dir(
     instance_dir: &Path,
     meta: &crate::instances::InstanceMeta,
@@ -1095,8 +996,6 @@ pub async fn git_check_dir(
         has_archive: false,
     })
 }
-
-/// Aplica los cambios pendientes de la repo (con backup previo).
 pub async fn git_apply_dir(
     instance_dir: &Path,
     on_status: &mut (dyn FnMut(String) + Send),
@@ -1118,8 +1017,6 @@ pub async fn git_apply_dir(
     }
 
     let protected = default_protected().into_iter().collect::<HashSet<_>>();
-
-    // 1. Backup previo de las carpetas afectadas
     let revision_slug = pend
         .head
         .chars()
@@ -1155,8 +1052,6 @@ pub async fn git_apply_dir(
     let mut removed = Vec::new();
     let mut errors = Vec::new();
     let client = http_client();
-
-    // 2. Descargar (nuevos y cambiados) -> bloque 85..99 por archivo
     let total_dl = (pend.missing.len() + pend.different.len()).max(1);
     let mut done = 0usize;
     for rel in pend.missing.iter().chain(pend.different.iter()) {
@@ -1175,7 +1070,6 @@ pub async fn git_apply_dir(
         match crate::downloader::download_file(&client, &url, &dest, &mut |_, _| {}).await {
             Ok(()) => {
                 if is_lfs_pointer(&dest) {
-                    // raw devuelve el puntero Git LFS: bajar el contenido real de media.
                     let media = lfs_media_url(&ctx, rel);
                     match crate::downloader::download_file(&client, &media, &dest, &mut |_, _| {}).await {
                         Ok(()) => {
@@ -1196,8 +1090,6 @@ pub async fn git_apply_dir(
             Err(e) => errors.push(format!("{rel}: {e}")),
         }
     }
-
-    // 3. Eliminar los que el owner quitó de la repo
     let tracked: Vec<String> = meta.github_tracked.clone();
     for rel in &pend.extra {
         if is_git_protected(rel, &protected) {
@@ -1211,8 +1103,6 @@ pub async fn git_apply_dir(
             removed.push(rel.clone());
         }
     }
-
-    // 4. Guardar estado (HEAD aplicado + lista gestionada)
     let previous: Vec<String> = tracked;
     let mut new_tracked = previous.clone();
     for rel in pend.missing.iter().chain(pend.different.iter()) {
@@ -1243,11 +1133,6 @@ pub async fn git_apply_dir(
         errors,
     })
 }
-
-// ---------------------------------------------------------------------------
-// Auto-actualización: el owner solo tiene que subir los cambios a la URL y el
-// launcher los detecta (revisión + hashes / commits) y los aplica automáticamente.
-// ---------------------------------------------------------------------------
 #[derive(Debug, Clone, Serialize)]
 pub struct InstanceUpdateState {
     pub name: String,
@@ -1256,8 +1141,6 @@ pub struct InstanceUpdateState {
     pub revision: String,
     pub error: Option<String>,
 }
-
-/// Comprueba todas las instancias remotas de golpe (para el banner de la UI).
 pub async fn auto_check_all() -> Result<Vec<InstanceUpdateState>, String> {
     let mut out = Vec::new();
     for inst in crate::instances::scan_instances() {
@@ -1298,9 +1181,6 @@ pub struct AutoSyncSummary {
     pub already_up_to_date: Vec<String>,
     pub errors: Vec<String>,
 }
-
-/// Aplica las actualizaciones pendientes de TODAS las instancias remotas
-/// (con backup previo). Cada una usa su propio manifest_url.
 pub async fn auto_sync_all(
     on_status: &mut (dyn FnMut(String) + Send),
 ) -> Result<AutoSyncSummary, String> {

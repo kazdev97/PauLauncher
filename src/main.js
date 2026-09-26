@@ -1,36 +1,29 @@
-// PauLauncher frontend. Sin Node: window.__TAURI__ inyectado por withGlobalTauri.
-// Modo demo: si no estamos dentro de Tauri (por ejemplo en un navegador), se
-// usan datos de ejemplo para poder previsualizar y desarrollar la UI sin compilar.
 const DEMO = !window.__TAURI__;
 
 const $ = (id) => document.getElementById(id);
 const status = (id, msg) => { $(id).textContent = msg || ""; };
-
-// ---------------------------------------------------------------------------
-// Datos y stubs del modo demo
-// ---------------------------------------------------------------------------
 const demoStore = { accounts: [], selected_id: "", mode: "offline", offline_username: "Juanito67" };
 const demoInstances = [
-  { name: "Vanilla 1.21.4", version_id: "1.21.4", loader: "vanilla", game_version: "1.21.4", loader_version: "", source: "local", manifest_url: "", manifest_type: "", server_version: "", actualizacion: true, installed: true, instance_dir: "C:\\Documentos\\PauLauncher\\instancias\\Vanilla 1.21.4", last_launched: "2026-09-14 18:00", session_based: false, remote: false },
-  { name: "Server de Kaz", version_id: "1.21.4-fabric-0.16.14", loader: "fabric", game_version: "1.21.4", loader_version: "0.16.14", source: "remote", manifest_url: "https://drive.google.com/uc?export=download&id=abc123", manifest_type: "pau", server_version: "2026-09-13", actualizacion: true, installed: true, instance_dir: "C:\\Documentos\\PauLauncher\\instancias\\Server de Kaz", last_launched: "2026-09-13 21:30", session_based: false, remote: true },
-  { name: "Pack de Test", version_id: "", loader: "fabric", game_version: "1.20.1", loader_version: "", source: "remote", manifest_url: "https://drive.google.com/uc?export=download&id=xyz789", manifest_type: "", server_version: "", actualizacion: true, installed: false, instance_dir: "C:\\Documentos\\PauLauncher\\instancias\\Pack de Test", last_launched: "", session_based: false },
+  { name: "Vanilla 1.21.4", version_id: "1.21.4", loader: "vanilla", game_version: "1.21.4", loader_version: "", source: "local", manifest_url: "", manifest_type: "", server_version: "", actualizacion: true, installed: true, instance_dir: "C:\\Documentos\\NexusLauncher\\instancias\\Vanilla 1.21.4", last_launched: "2026-09-14 18:00", session_based: false, remote: false },
+  { name: "Server de Kaz", version_id: "1.21.4-fabric-0.16.14", loader: "fabric", game_version: "1.21.4", loader_version: "0.16.14", source: "remote", manifest_url: "https://drive.google.com/uc?export=download&id=abc123", manifest_type: "pau", server_version: "2026-09-13", actualizacion: true, installed: true, instance_dir: "C:\\Documentos\\NexusLauncher\\instancias\\Server de Kaz", last_launched: "2026-09-13 21:30", session_based: false, remote: true },
+  { name: "Pack de Test", version_id: "", loader: "fabric", game_version: "1.20.1", loader_version: "", source: "remote", manifest_url: "https://drive.google.com/uc?export=download&id=xyz789", manifest_type: "", server_version: "", actualizacion: true, installed: false, instance_dir: "C:\\Documentos\\NexusLauncher\\instancias\\Pack de Test", last_launched: "", session_based: false },
 ];
 const demoJava = [
-  { path: "C:\\Documentos\\PauLauncher\\runtime\\jdk-21\\bin\\java.exe", major: 21, is_valid: true },
+  { path: "C:\\Documentos\\NexusLauncher\\runtime\\jdk-21\\bin\\java.exe", major: 21, is_valid: true },
   { path: "C:\\Program Files\\Java\\jdk-17.0.10\\bin\\java.exe", major: 17, is_valid: true },
 ];
 const demoVersions = [
   { id: "1.21.4", kind: "release", release_time: "2024-12-03T18:21:00+00:00" },
   { id: "1.20.1", kind: "release", release_time: "2023-06-12T12:11:00+00:00" },
 ];
-const demoSettings = { ram_mb: 4096, max_ram_mb: 0, java_path_override: "", streamer_mode: true, close_launcher_after_launch: false, game_res_width: 0, game_res_height: 0, fullscreen: false, last_username: "", source_url: "https://raw.githubusercontent.com/kazdev97/Paucalipsis-2/main/index.json", auto_update: true };
+const demoSettings = { ram_mb: 4096, max_ram_mb: 0, java_path_override: "", streamer_mode: true, close_launcher_after_launch: false, game_res_width: 0, game_res_height: 0, fullscreen: false, last_username: "", source_url: "https://raw.githubusercontent.com/kazdev97/Nexusmodpacks/main/index.json", auto_update: true };
 const demoSource = [
-  { id: "paucalipsis", name: "Paucalipsis 2", description: "Carpeta del pack en la repo (sync directo de GitHub)", game_version: "1.21.4", loader: "fabric", loader_version: "0.16.14", manifest_url: "", revision: "latest", installed: true, github_repo: "kazdev97/Paucalipsis-2", github_path: "pack", github_branch: "main" },
+  { id: "paucalipsis", name: "Paucalipsis 2", description: "Carpeta del pack en la repo (sync directo de GitHub)", game_version: "1.21.4", loader: "fabric", loader_version: "0.16.14", manifest_url: "", revision: "latest", installed: true, github_repo: "kazdev97/Nexusmodpacks", github_path: "pack", github_branch: "main" },
   { id: "escuela", name: "Escuela 2026", description: "Pack educativo ligero para el aula", game_version: "1.20.1", loader: "fabric", loader_version: "0.16.10", manifest_url: "https://raw.githubusercontent.com/pau/mis-packs/main/escuela/manifest.json", revision: "2026-09-01", installed: false },
   { id: "evento", name: "Evento Hallowen 2026", description: "Modpack temporal del evento", game_version: "1.21.4", loader: "vanilla", loader_version: "", manifest_url: "https://raw.githubusercontent.com/pau/mis-packs/main/evento/manifest.json", revision: "2026-09-13", installed: false },
 ];
 const demoDiff = { revision: "20260914T120000Z", up_to_date: false, missing: ["mods/jei-1.21.4.jar", "config/server.properties"], different: ["mods/usefulmod.jar"], extra: ["mods/lag_fix.jar", "config/old_setting.toml"], change_count: 5, has_archive: true };
-const demoSyncResult = { applied_revision: "20260914T120000Z", replaced: ["mods/usefulmod.jar"], downloaded: ["mods/jei-1.21.4.jar", "config/server.properties"], removed: ["mods/lag_fix.jar"], backup_dir: "C:\\Documentos\\PauLauncher\\instancias\\Server de Kaz\\backups\\20260914T120000Z", errors: [] };
+const demoSyncResult = { applied_revision: "20260914T120000Z", replaced: ["mods/usefulmod.jar"], downloaded: ["mods/jei-1.21.4.jar", "config/server.properties"], removed: ["mods/lag_fix.jar"], backup_dir: "C:\\Documentos\\NexusLauncher\\instancias\\Server de Kaz\\backups\\20260914T120000Z", errors: [] };
 
 function demoCall(cmd) {
   const map = {
@@ -56,7 +49,7 @@ function demoCall(cmd) {
       { name: "Vanilla 1.21.4", up_to_date: true, change_count: 0, revision: "", error: null },
     ],
     auto_sync_apply: () => ({ applied: ["Server de Kaz (revisión 20260914T120000Z)"], already_up_to_date: ["Vanilla 1.21.4"], errors: [] }),
-    java_resolve: () => ({ path: "C:\\Documentos\\PauLauncher\\runtime\\jdk-21\\bin\\java.exe", major: 21, is_valid: true }),
+    java_resolve: () => ({ path: "C:\\Documentos\\NexusLauncher\\runtime\\jdk-21\\bin\\java.exe", major: 21, is_valid: true }),
     launch_game: () => 4321,
     launch_is_running: () => false,
     update_check: () => ({ current: "0.1.0", latest: "0.2.0", available: true, notes: "Mejoras de compatibilidad", download_url: "" }),
@@ -75,8 +68,6 @@ const CONSOLE_MAX_LINES = 4000;
 
 function appendLog(line, stream) {
   const pre = $("console");
-  // Solo auto-scroll si ya estábamos abajo: si el usuario está seleccionando
-  // texto, no lo arrastramos con cada línea nueva.
   const wasAtBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24;
   consoleBuf.push((stream === "stderr" ? "[err] " : "") + line);
   if (consoleBuf.length > CONSOLE_MAX_LINES) {
@@ -124,8 +115,6 @@ async function call(cmd, args) {
     throw new Error(typeof e === "string" ? e : (e && e.message) || "error desconocido");
   }
 }
-
-// ---------- NAV ----------
 document.querySelectorAll(".nav-item").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
@@ -137,8 +126,6 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
     call("discord_set_page", { page: btn.dataset.page }).catch(() => {});
   });
 });
-
-// ---------- LOGIN ----------
 async function refreshLogin() {
   try {
     const store = await call("login_get_state", {});
@@ -149,7 +136,6 @@ async function refreshLogin() {
     if (offlineName) $("offline-username").value = store.offline_username;
 
     if (offlineName) {
-      // Modo No premium activo: nombre local, sin skins de sesión
       $("nav-user").textContent = offlineName + " (no premium)";
       const navAvatar = $("nav-user-avatar");
       if (navAvatar) navAvatar.classList.add("hidden");
@@ -166,9 +152,6 @@ async function refreshLogin() {
 
       $("login-name").textContent = username;
       if ($("login-uuid")) $("login-uuid").textContent = uuid;
-
-      // Estado de la sesión: si el token ya no se renueva (MSA caducado/revocado),
-      // se muestra "Sesión cerrada" y se habilita el botón Relogin.
       const needsRelogin = !!sel.needs_relogin;
       const statusEl = $("account-status");
       if (statusEl) {
@@ -183,8 +166,6 @@ async function refreshLogin() {
         if (needsRelogin) reloginBtn.classList.remove("hidden");
         else reloginBtn.classList.add("hidden");
       }
-
-      // Render de cuerpo completo 3D en la pestaña Cuenta
       const skinBody = $("login-skin-body");
       if (skinBody) {
         skinBody.src = `https://mc-heads.net/body/${encodeURIComponent(username)}/240`;
@@ -192,8 +173,6 @@ async function refreshLogin() {
           if (uuid) skinBody.src = `https://crafatar.com/renders/body/${uuid}?overlay=true`;
         };
       }
-
-      // Render de cabeza en la pestaña Cuenta
       const avatarHead = $("login-avatar-head");
       if (avatarHead) {
         avatarHead.src = `https://mc-heads.net/avatar/${encodeURIComponent(username)}/64`;
@@ -201,8 +180,6 @@ async function refreshLogin() {
           avatarHead.src = `https://minotar.net/helm/${encodeURIComponent(username)}/64`;
         };
       }
-
-      // Sidebar: nombre y cabeza abajo a la izquierda
       $("nav-user").textContent = username;
       const navAvatar = $("nav-user-avatar");
       if (navAvatar) {
@@ -268,8 +245,6 @@ $("btn-logout").addEventListener("click", async () => {
     refreshLogin();
   } catch (e) { status("login-status", e.message); }
 });
-
-// ---------- MODO NO PREMIUM (OFFLINE) ----------
 $("btn-save-offline").addEventListener("click", async () => {
   const name = $("offline-username").value.trim();
   if (!name) { status("offline-status", "Escribe un nombre de usuario."); return; }
@@ -309,8 +284,6 @@ $("offline-mode").addEventListener("change", async () => {
     } catch (e) { status("offline-status", e.message); }
   }
 });
-
-// ---------- INSTANCIAS ----------
 let instances = [];
 let currentInstance = null;
 
@@ -609,8 +582,6 @@ function showModal(html, okLabel, okHandler) {
   document.body.appendChild(backdrop);
   return backdrop;
 }
-
-// ---------- PROGRESO DE INSTALACIÓN ----------
 function setInstallProgress(pct, text) {
   const card = $("install-progress");
   if (!card) return;
@@ -623,8 +594,6 @@ function hideInstallProgress() {
   const card = $("install-progress");
   if (card) card.classList.add("hidden");
 }
-
-// ---------- AJUSTES ----------
 async function loadSettings() {
   try {
     const s = await getSettings();
@@ -633,8 +602,6 @@ async function loadSettings() {
     $("set-auto").checked = s.auto_update !== undefined ? !!s.auto_update : true;
   } catch (e) { status("settings-status", e.message); }
 }
-
-// ---------- MODO ANTILAG ----------
 async function loadAntilag() {
   try {
     const st = await call("antilag_status", {});
@@ -846,8 +813,6 @@ $("btn-rollback").addEventListener("click", async () => {
     loadInstances();
   } catch (e) { status("settings-status", "Error: " + e.message); }
 });
-
-// ---------- CONSOLA / LANZAMIENTO ----------
 async function launchInstance(inst) {
   const settings = await call("settings_get", {}).catch(() => null) || {};
   let javaPath = (settings.java_path_override || "").trim();
@@ -883,7 +848,7 @@ async function launchInstance(inst) {
         "[main/INFO]: Launched version " + inst.name,
         "[main/INFO]: 45 mods loaded (12 new, 2 updated)",
         "[main/WARN]: Some legacy options were deprecated",
-        "[main/INFO]: Backend library: PauLauncher/0.1 (Minecraft client 1.21.4)",
+        "[main/INFO]: Backend library: NexusLauncher/0.1 (Minecraft client 1.21.4)",
         "[Render thread/INFO]: Setting user: elusuario_de_prueba",
         "[Render thread/INFO]: Backend library: connecting to play.kazserver.gg...",
         "[Render thread/INFO]: Connected to play.kazserver.gg:25565",
@@ -920,11 +885,22 @@ EVENT.listen("launch/error", (data) => status("game-state", data.payload));
 EVENT.listen("sync/status", (data) => status("instances-status", data.payload));
 EVENT.listen("sync/progress", (data) => setInstallProgress(data.payload.percent || 0, data.payload.status || ""));
 EVENT.listen("java/progress", (data) => status("settings-status", data.payload));
-
-// ---------- TEMA OSCURO / CLARO ----------
+const donateBtn = $("donate-btn");
+if (donateBtn) {
+  donateBtn.addEventListener("click", () => {
+    const url = "https://ko-fi.com/nexuscreatorsjr";
+    if (DEMO) {
+      window.open(url, "_blank");
+    } else {
+      call("open_url", { url }).catch((e) => {
+        try { window.open(url, "_blank"); } catch (_) {}
+      });
+    }
+  });
+}
 function initTheme() {
   try {
-    const saved = localStorage.getItem("pau_theme");
+    const saved = localStorage.getItem("nexus_theme");
     const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
     if (saved === "dark" || (!saved && prefersDark)) {
       document.body.classList.add("dark");
@@ -939,19 +915,17 @@ if (themeToggle) {
   themeToggle.addEventListener("click", () => {
     const isDark = document.body.classList.toggle("dark");
     try {
-      localStorage.setItem("pau_theme", isDark ? "dark" : "light");
+      localStorage.setItem("nexus_theme", isDark ? "dark" : "light");
     } catch (_) {}
   });
 }
-
-// ---------- AUTO-ACTUALIZACIÓN DEL LAUNCHER ----------
 function checkLauncherUpdate() {
   const chip = $("update-chip");
   if (!chip) return;
   call("update_check", {}).then(async (info) => {
     chip.textContent = "";
     const ver = document.createElement("span");
-    ver.textContent = `PauLauncher v${info.current || "?"}`;
+    ver.textContent = `NexusLauncher v${info.current || "?"}`;
     chip.appendChild(ver);
     if (info.available && info.latest && info.latest !== info.current) {
       const sep = document.createElement("span");
@@ -994,12 +968,10 @@ function checkLauncherUpdate() {
       } catch (_) {}
     }
   }).catch((err) => {
-    chip.textContent = `PauLauncher v${DEMO ? "0.1.0" : "?"} · sin conexión`;
+    chip.textContent = `NexusLauncher v${DEMO ? "0.1.0" : "?"} · sin conexión`;
     if (chip.title) chip.title = err.message;
   });
 }
-
-// ---------- INICIALIZACIÓN ----------
 initTheme();
 refreshLogin();
 loadInstances();

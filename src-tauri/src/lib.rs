@@ -1,4 +1,3 @@
-//! Registrar módulos y exponer comandos Tauri al frontend.
 pub mod antilag;
 pub mod auth;
 pub mod config;
@@ -16,15 +15,11 @@ pub mod discord;
 use config::{Account, AccountStore, Settings};
 use serde::Serialize;
 use tauri::Emitter;
-
-/// Payload del evento `sync/progress` (barra de progreso de instalaciones).
 #[derive(Clone, Serialize)]
 pub struct ProgressMsg {
     pub percent: u32,
     pub status: String,
 }
-
-// -- Cuentas --
 #[tauri::command]
 fn login_get_state() -> Result<AccountStore, String> {
     Ok(config::AccountStore::load())
@@ -53,8 +48,6 @@ fn login_set_selected(account_id: String) -> Result<(), String> {
 fn login_remove_account(account_id: String) -> Result<(), String> {
     config::remove_account(&account_id)
 }
-
-/// Activa el modo No premium guardando un usuario local (offline).
 #[tauri::command]
 fn login_set_offline(username: String) -> Result<(), String> {
     let name = username.trim().to_string();
@@ -67,11 +60,6 @@ fn login_set_offline(username: String) -> Result<(), String> {
     store.mode = "offline".to_string();
     store.save()
 }
-
-// -- Java --
-/// Resuelve el Java que necesita la versión de la instancia usando el JSON de
-/// Mojang (o heuristic). Prefiere el descargado o el del sistema y si ninguno
-/// cumple, descarga el JDK correcto de Adoptium automáticamente.
 #[tauri::command]
 async fn java_resolve(app: tauri::AppHandle, name: String) -> Result<java::JavaInfo, String> {
     let handle = app.clone();
@@ -127,8 +115,6 @@ async fn java_get_system() -> Result<Vec<java::JavaInfo>, String> {
 async fn java_get_bundled() -> Vec<java::JavaInfo> {
     java::find_all_bundled_java()
 }
-
-// -- Auto-actualización del launcher (GitHub) --
 #[tauri::command]
 async fn update_check() -> Result<updater::UpdateInfo, String> {
     updater::check_update().await
@@ -138,8 +124,6 @@ async fn update_check() -> Result<updater::UpdateInfo, String> {
 async fn update_apply() -> Result<(), String> {
     updater::apply_update().await
 }
-
-// -- Instancias --
 #[tauri::command]
 fn instances_list() -> Vec<instances::InstanceInfo> {
     instances::scan_instances()
@@ -200,8 +184,6 @@ fn instances_get_meta(name: String) -> Result<instances::InstanceMeta, String> {
 fn instances_delete(name: String) -> Result<(), String> {
     instances::delete_instance(&name)
 }
-
-// -- Sincronización (control del owner) --
 #[tauri::command]
 async fn sync_check(name: String) -> Result<sync::SyncDiff, String> {
     let dir = instances::instance_path(&name);
@@ -245,8 +227,6 @@ fn sync_rollback(name: String, revision: String) -> Result<sync::SyncResult, Str
 fn sync_list_backups(name: String) -> Vec<String> {
     sync::list_backups(&name)
 }
-
-// -- Auto-actualización (el owner sube a la repo y los jugadores se actualizan solos) --
 #[tauri::command]
 async fn auto_sync_check() -> Result<Vec<sync::InstanceUpdateState>, String> {
     sync::auto_check_all().await
@@ -260,8 +240,6 @@ async fn auto_sync_apply(app: tauri::AppHandle) -> Result<sync::AutoSyncSummary,
     })
     .await
 }
-
-// -- Exportación (owner) --
 #[tauri::command]
 fn pack_export(
     instance_name: String,
@@ -279,7 +257,7 @@ fn pack_export(
     let dest = if destination_dir.trim().is_empty() {
         dirs::desktop_dir()
             .unwrap_or_else(|| config::launcher_data_dir())
-            .join("PauLauncher-packs")
+            .join("NexusLauncher-packs")
     } else {
         std::path::PathBuf::from(destination_dir)
     };
@@ -290,8 +268,6 @@ fn pack_export(
 fn pack_whitepaper() -> String {
     packager::export_whitepaper().to_string()
 }
-
-// -- Fuente de instancias (índice remoto del owner) --
 #[tauri::command]
 async fn source_fetch(url: Option<String>) -> Result<Vec<sync::SourceInstance>, String> {
     let url = url
@@ -302,8 +278,6 @@ async fn source_fetch(url: Option<String>) -> Result<Vec<sync::SourceInstance>, 
         .map(|i| i.name)
         .collect();
     let mut list = sync::fetch_source_index(&url).await?;
-    // El nombre instalado (carpeta) puede diferir del del índice ("a b" vs
-    // "a_b"): comparamos normalizando (minúsculas, solo alfanuméricos).
     let normalize = |s: &str| -> String {
         s.to_lowercase()
             .chars()
@@ -351,8 +325,6 @@ async fn source_install(
     )
     .await
 }
-
-// -- Instalación de archivos de juego --
 #[tauri::command]
 async fn install_vanilla_versions() -> Result<Vec<installer::VersionOverview>, String> {
     installer::get_vanilla_versions().await
@@ -379,8 +351,6 @@ async fn install_instance(app: tauri::AppHandle, name: String) -> Result<String,
     let _ = &app;
     installer::install_instance(&dir, &mut |_, _| {}).await
 }
-
-// -- Lanzamiento --
 #[tauri::command]
 async fn launch_game(
     app: tauri::AppHandle,
@@ -395,9 +365,6 @@ async fn launch_game(
             "No hay una cuenta seleccionada (inicia sesión con Microsoft o activa el modo No premium con un nombre de usuario)."
                 .to_string()
         })?;
-        // Renovar el token antes de lanzar (igual que KazLauncher): el access_token
-        // de Minecraft caduca a las 24 h. Si el refresh falla por token revocado,
-        // la cuenta se invalida y se impide el lanzamiento hasta re-logear.
         if !selected.refresh_token.is_empty() {
             match auth::refresh_token(crate::auth::CLIENT_ID, &selected.refresh_token).await {
                 Ok((fresh, _)) => {
@@ -407,8 +374,6 @@ async fn launch_game(
                 }
                 Err(e) => {
                     if e.contains("invalid_grant") {
-                        // MSA caducado/revocado: se marca la cuenta para que la
-                        // UI muestre "Sesión cerrada" + botón Relogin.
                         selected.needs_relogin = true;
                         store.upsert(selected.clone());
                         let _ = store.save();
@@ -437,8 +402,6 @@ fn launch_kill() -> Result<(), String> {
 fn launch_is_running() -> bool {
     launch::is_running()
 }
-
-// -- Ajustes --
 #[tauri::command]
 fn settings_get() -> Result<Settings, String> {
     Ok(Settings::load())
@@ -477,8 +440,10 @@ fn discord_set_page(page: String) -> Result<(), String> {
     discord::set_menu_page(&page);
     Ok(())
 }
-
-// -- Modo antilag (túnel WARP solo para Minecraft) --
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    open::that(url).map_err(|e| format!("abrir URL: {e}"))
+}
 #[tauri::command]
 async fn antilag_install(app: tauri::AppHandle) -> Result<antilag::AntilagStatus, String> {
     let handle = app.clone();
@@ -509,41 +474,32 @@ fn antilag_set_host(host: String) -> Result<(), String> {
     s.antilag_host = host.trim().to_string();
     s.save()
 }
-
-// ---------------------------------------------------------------------------
-// Entry point
-// ---------------------------------------------------------------------------
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     discord::init(true);
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            // cuentas
             login_get_state,
             login_start,
             login_get_account,
             login_set_selected,
             login_remove_account,
             login_set_offline,
-            // java
             java_get_required,
             java_resolve,
             java_find,
             java_install,
             java_get_system,
             java_get_bundled,
-// instancias
             instances_list,
             instances_create,
             instances_get_meta,
             instances_delete,
             system_info,
             ram_recommend,
-            // fuente de instancias
             source_fetch,
             source_install,
-            // sincronización
             sync_check,
             sync_apply,
             sync_rollback,
@@ -554,27 +510,24 @@ pub fn run() {
             update_apply,
             pack_export,
             pack_whitepaper,
-            // instalación
             install_vanilla_versions,
             install_fabric_loaders,
             install_forge_versions,
             install_neoforge_versions,
             install_instance,
-            // lanzamiento
             launch_game,
             launch_kill,
             launch_is_running,
-            // ajustes
             settings_get,
             settings_save,
             discord_set_enabled,
             discord_set_page,
-            // modo antilag
             antilag_install,
             antilag_status,
             antilag_set_enabled,
             antilag_set_host,
+            open_url,
         ])
         .run(tauri::generate_context!())
-        .expect("error al iniciar PauLauncher");
+        .expect("error al iniciar NexusLauncher");
 }

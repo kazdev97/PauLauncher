@@ -1,7 +1,3 @@
-//! Integración de Discord Rich Presence (RPC) para PauLauncher.
-//! Maneja la conexión con el cliente local de Discord en un hilo en segundo plano
-//! con auto-reconexión periódica (cada 5s), soporte para páginas del launcher,
-//! ícono oficial de la aplicación y switch a 'paucalipsi2' solo para instancias Paucalipsis.
 
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use std::fs::OpenOptions;
@@ -11,13 +7,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-pub const DISCORD_CLIENT_ID: &str = "1535020376529174648";
-
-/// Ícono oficial de la aplicación servido directamente desde el CDN de Discord
+pub const DISCORD_CLIENT_ID: &str = "1553302286309134397";
 pub const DISCORD_APP_ICON_URL: &str =
-    "https://cdn.discordapp.com/app-icons/1535020376529174648/44bd09416dc7c58f2f241ddbc92a989c.png";
-
-/// Asset de arte para instancias de Paucalipsis
+    "https://cdn.discordapp.com/app-icons/1553302286309134397/44bd09416dc7c58f2f241ddbc92a989c.png";
 pub const DISCORD_PAUCALIPSIS_ASSET: &str = "paucalipsi2";
 
 fn log_discord(msg: &str) {
@@ -57,8 +49,6 @@ static DISCORD_MGR: once_cell::sync::Lazy<Arc<Mutex<DiscordManager>>> =
             enabled: true,
         }))
     });
-
-/// Inicia el hilo trabajador de Discord RPC con auto-reconexión.
 pub fn init(enabled: bool) {
     let mut mgr = match DISCORD_MGR.lock() {
         Ok(m) => m,
@@ -110,7 +100,6 @@ pub fn init(enabled: bool) {
                 }
                 Ok(DiscordAction::MenuPage(page)) => {
                     current_page = page.clone();
-                    // Si el juego NO está en curso, actualizar el estado del menú
                     if is_enabled && active_playing.is_none() {
                         apply_action(&mut client, &DiscordAction::MenuPage(page));
                     }
@@ -139,7 +128,6 @@ pub fn init(enabled: bool) {
                     }
                 }
                 Err(RecvTimeoutError::Timeout) => {
-                    // Si estamos habilitados y aún no conectados, intentar reconectar
                     if is_enabled && client.is_none() {
                         if let Some(ref play_act) = active_playing {
                             apply_action(&mut client, play_act);
@@ -199,11 +187,9 @@ fn apply_action(client: &mut Option<DiscordIpcClient>, action: &DiscordAction) {
                 "login" => ("En el launcher", "Gestionando cuenta"),
                 _ => ("Listo para jugar", "En el menú principal"),
             };
-
-            // En el menú navegando siempre usa el icono oficial de la app
             let assets = activity::Assets::new()
                 .large_image(DISCORD_APP_ICON_URL)
-                .large_text("PauLauncher");
+                .large_text("NexusLauncher");
 
             let act = activity::Activity::new()
                 .state(state)
@@ -239,8 +225,6 @@ fn apply_action(client: &mut Option<DiscordIpcClient>, action: &DiscordAction) {
                 }
             };
             let details_text = format!("Minecraft {} · {}", game_version, loader_display);
-
-            // Solo usar paucalipsi2 si el nombre de la instancia contiene "Paucalipsis"
             let image_key = if instance_name.to_lowercase().contains("paucalipsis") {
                 DISCORD_PAUCALIPSIS_ASSET
             } else {
@@ -249,7 +233,7 @@ fn apply_action(client: &mut Option<DiscordIpcClient>, action: &DiscordAction) {
 
             let assets = activity::Assets::new()
                 .large_image(image_key)
-                .large_text("PauLauncher");
+                .large_text("NexusLauncher");
 
             let timestamps = activity::Timestamps::new().start(*started_at);
 
@@ -290,8 +274,6 @@ fn apply_action(client: &mut Option<DiscordIpcClient>, action: &DiscordAction) {
         *client = None;
     }
 }
-
-/// Actualiza la página del menú en la que está el usuario (login, instances, settings, console).
 pub fn set_menu_page(page: &str) {
     if let Ok(mgr) = DISCORD_MGR.lock() {
         if mgr.enabled {
@@ -301,8 +283,6 @@ pub fn set_menu_page(page: &str) {
         }
     }
 }
-
-/// Establece el estado de Discord en reposo (en el launcher).
 pub fn set_launcher_idle() {
     if let Ok(mgr) = DISCORD_MGR.lock() {
         if mgr.enabled {
@@ -312,8 +292,6 @@ pub fn set_launcher_idle() {
         }
     }
 }
-
-/// Establece el estado de Discord como jugando a una instancia específica.
 pub fn set_playing(instance_name: &str, game_version: &str, loader: &str) {
     if let Ok(mgr) = DISCORD_MGR.lock() {
         if mgr.enabled {
@@ -333,8 +311,6 @@ pub fn set_playing(instance_name: &str, game_version: &str, loader: &str) {
         }
     }
 }
-
-/// Limpia la presencia actual de Discord.
 pub fn clear() {
     if let Ok(mgr) = DISCORD_MGR.lock() {
         if let Some(tx) = &mgr.sender {
@@ -342,8 +318,6 @@ pub fn clear() {
         }
     }
 }
-
-/// Habilita o deshabilita la presencia de Discord según preferencia del usuario.
 pub fn set_enabled(enabled: bool) {
     if let Ok(mut mgr) = DISCORD_MGR.lock() {
         mgr.enabled = enabled;

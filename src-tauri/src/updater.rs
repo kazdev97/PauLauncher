@@ -1,19 +1,10 @@
-//! Auto-actualización del launcher vía GitHub (estilo KazLauncher):
-//! un `version.json` en la rama principal del repo del launcher indica la
-//! versión más reciente y la URL del ejecutable. Al abrir la app se comprueba
-//! y, si hay una versión nueva, la UI muestra un aviso; al pulsarlo se
-//! descarga, se sustituye el exe actual y el launcher se reinicia solo.
 use crate::downloader::{download_file, get_json, http_client};
 use serde::Serialize;
 use std::fs;
 use std::time::Duration;
-
-/// Versión de esta compilación (Cargo.toml).
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-/// Manifiesto de versiones del launcher (repo público del owner).
 pub const UPDATE_METADATA_URL: &str =
-    "https://raw.githubusercontent.com/kazdev97/PauLauncher/main/version.json";
+    "https://raw.githubusercontent.com/kazdev97/NexusLauncher/main/version.json";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UpdateInfo {
@@ -34,8 +25,6 @@ struct RemoteMeta {
     #[serde(default)]
     url: String,
 }
-
-/// Compara versiones "1.2.3-beta1" numéricamente (mayor componente primero).
 pub fn version_gt(a: &str, b: &str) -> bool {
     let num = |s: &str| -> Vec<i64> {
         s.split(|c: char| !c.is_ascii_digit())
@@ -54,8 +43,6 @@ pub fn version_gt(a: &str, b: &str) -> bool {
     }
     false
 }
-
-/// Consulta el manifiesto GitHub y decide si hay versión más reciente.
 pub async fn check_update() -> Result<UpdateInfo, String> {
     let client = http_client();
     let meta: RemoteMeta =
@@ -73,10 +60,6 @@ pub async fn check_update() -> Result<UpdateInfo, String> {
         error: None,
     })
 }
-
-/// Descarga la nueva versión y lanza un script PowerShell que espera a que el
-/// launcher cierre, reemplaza el exe y lo vuelve a abrir. Devuelve Ok antes de
-/// que el proceso actual sea reemplazado (en ~3 s el script lo detiene).
 pub async fn apply_update() -> Result<(), String> {
     let info = check_update().await?;
     if !info.available || info.download_url.trim().is_empty() {
@@ -85,23 +68,17 @@ pub async fn apply_update() -> Result<(), String> {
 
     let updates_dir = crate::config::launcher_data_dir().join("updates");
     fs::create_dir_all(&updates_dir).map_err(|e| format!("crear carpeta de updates: {e}"))?;
-
-    // 1. Descargar el nuevo ejecutable con extensión única para evitar colisiones.
-    let new_exe = updates_dir.join(format!("paulauncher-{}.new.exe", info.latest));
+    let new_exe = updates_dir.join(format!("nexuslauncher-{}.new.exe", info.latest));
     let client = http_client();
     download_file(&client, &info.download_url, &new_exe, &mut |_, _| {})
         .await
         .map_err(|e| format!("descargar la actualización: {e}"))?;
-
-    // 2. Ruta del ejecutable actual (ej. target/release/paulauncher.exe).
     let cur_exe = std::env::current_exe().map_err(|e| format!("localizar el exe actual: {e}"))?;
     let cur_str = cur_exe.to_string_lossy().replace('\'', "''");
     let new_str = new_exe.to_string_lossy().replace('\'', "''");
-
-    // 3. Script: espera, mata el proceso, copia el nuevo, borra el temporal y relanza.
     let ps = format!(
         "Start-Sleep -Seconds 3; $ErrorActionPreference='Stop'; \
-Stop-Process -Name 'paulauncher' -Force -ErrorAction SilentlyContinue; \
+Stop-Process -Name 'nexuslauncher' -Force -ErrorAction SilentlyContinue; \
 Start-Sleep -Milliseconds 800; \
 Copy-Item -LiteralPath '{new_str}' -Destination '{cur_str}' -Force; \
 Remove-Item -LiteralPath '{new_str}' -Force -ErrorAction SilentlyContinue; \

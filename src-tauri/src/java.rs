@@ -1,5 +1,3 @@
-//! Java: resolución de versión requerida (heurística + Mojang), descarga Adoptium,
-//! validación del ejecutable. Port de utils/java_installer.py y utils/java_resolver.py.
 use crate::config::{runtime_dir, launcher_data_dir};
 use crate::downloader::{download_file, get_json, http_client, get_text};
 use regex::Regex;
@@ -10,18 +8,12 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-
-/// Resultado de búsqueda/validación de un Java concreto (para la UI).
 #[derive(Debug, Clone, Serialize)]
 pub struct JavaInfo {
     pub path: String,
     pub major: u32,
     pub is_valid: bool,
 }
-
-// ---------------------------------------------------------------------------
-// Heurística de Java requerida (port de required_java_major)
-// ---------------------------------------------------------------------------
 pub fn parse_mc_version_tuple(mc_version: &str) -> (u32, u32, u32) {
     let re = Regex::new(r"(\d+)\.(\d+)(?:\.(\d+))?").unwrap();
     if let Some(c) = re.captures(mc_version) {
@@ -34,8 +26,6 @@ pub fn parse_mc_version_tuple(mc_version: &str) -> (u32, u32, u32) {
         (1, 21, 0)
     }
 }
-
-/// Java mínima recomendada según la heurística local (igual que Kaz).
 pub fn required_java_major_heuristic(mc_version: &str) -> u32 {
     let (major, minor, patch) = parse_mc_version_tuple(mc_version);
     if major != 1 {
@@ -50,32 +40,22 @@ pub fn required_java_major_heuristic(mc_version: &str) -> u32 {
         21
     }
 }
-
-/// Intenta leer javaVersion.majorVersion del JSON local ya descargado (sin red).
 fn java_major_from_local_version_json(mc_version: &str, instance_dir: &Path) -> Option<u32> {
-    // instance_dir/versions/<ver>/<ver>.json
     let versions_dir = instance_dir.join("versions");
     let p = versions_dir.join(mc_version).join(format!("{mc_version}.json"));
     let text = fs::read_to_string(p).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
     v.get("javaVersion")?.get("majorVersion")?.as_u64().map(|n| n as u32)
 }
-
-/// Resuelve la versión de Java requerida: primero local JSON, luego Mojang online, luego heurística.
 pub async fn resolve_java_major_online(mc_version: &str, instance_dir: &Path) -> u32 {
-    // 1. Local
     if let Some(m) = java_major_from_local_version_json(mc_version, instance_dir) {
         return m;
     }
-    // 2. Mojang
     if let Ok(m) = fetch_java_major_from_mojang(mc_version).await {
         return m;
     }
-    // 3. Heurística
     required_java_major_heuristic(mc_version)
 }
-
-/// Consulta el manifest de Mojang y obtiene la Java requerida por la versión de MC.
 async fn fetch_java_major_from_mojang(mc_version: &str) -> Result<u32, String> {
     let client = http_client();
     let manifest_text = get_text(
@@ -96,7 +76,6 @@ async fn fetch_java_major_from_mojang(mc_version: &str) -> Result<u32, String> {
     let url: Option<&str> = match version_entry {
         Some(entry) => entry.get("url").and_then(|u| u.as_str()),
         None => {
-            // intentar la versión base (e.g. "1.21" extraído de "1.21-xxx")
             let re = Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap();
             let base = re
                 .captures(mc_version)
@@ -120,10 +99,6 @@ async fn fetch_java_major_from_mojang(mc_version: &str) -> Result<u32, String> {
         .map(|n| n as u32)
         .ok_or_else(|| "no se encontró javaVersion.majorVersion en el JSON de Mojang".to_string())
 }
-
-// ---------------------------------------------------------------------------
-// Búsqueda de Java en el sistema (port de java_resolver)
-// ---------------------------------------------------------------------------
 fn extra_search_directories() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Ok(pf) = std::env::var("ProgramFiles") {
@@ -152,8 +127,6 @@ fn extra_search_directories() -> Vec<PathBuf> {
     }
     dirs
 }
-
-/// Busca el ejecutable bin/javaw.exe o bin/java.exe dentro de una carpeta Java.
 fn java_executable_in_dir(dir: &Path) -> Option<PathBuf> {
     let bin = dir.join("bin");
     let candidates = if cfg!(target_os = "windows") {
@@ -169,8 +142,6 @@ fn java_executable_in_dir(dir: &Path) -> Option<PathBuf> {
     }
     None
 }
-
-/// Validación: ejecuta java -version, comprueba 64-bit y devuelve la major.
 pub fn validate_java_executable(exe: &Path, min_major: u32) -> Result<u32, String> {
     let java_cmd = if exe.to_string_lossy().to_lowercase().ends_with("javaw.exe") {
         exe.parent().unwrap().join("java.exe")
@@ -195,7 +166,6 @@ pub fn validate_java_executable(exe: &Path, min_major: u32) -> Result<u32, Strin
     if cfg!(target_os = "windows") && (lower.contains("32-bit") || lower.contains("32 bit")) {
         return Err("Java de 32 bits no es compatible".to_string());
     }
-    // En 64-bit Windows, la ausencia de "64-bit" no es un error fatal en Java 17+.
     let re = Regex::new(r#"version "(\d+)"?"#).unwrap();
     let major = re
         .captures(&out)
@@ -207,8 +177,6 @@ pub fn validate_java_executable(exe: &Path, min_major: u32) -> Result<u32, Strin
     }
     Ok(major)
 }
-
-/// Busca el ejecutable en runtime dir (ya descargado por el launcher).
 pub fn find_bundled_java(major: u32) -> Option<PathBuf> {
     let root = runtime_dir().join(format!("jdk-{major}"));
     if !root.exists() {
@@ -220,12 +188,9 @@ pub fn find_bundled_java(major: u32) -> Option<PathBuf> {
     }
     None
 }
-
-/// Escanea directorios estándar buscando Java >= min_major.
 pub fn find_system_java(min_major: u32) -> Option<PathBuf> {
     let mut candidates = Vec::new();
     for base in extra_search_directories() {
-        // Glob jdk-*
         if let Ok(entries) = fs::read_dir(&base) {
             for entry in entries.flatten() {
                 let p = entry.path();
@@ -235,7 +200,6 @@ pub fn find_system_java(min_major: u32) -> Option<PathBuf> {
                             candidates.push((major_from_path(&exe).unwrap_or(0), exe));
                         }
                     }
-                    // Sub-carpetas (e.g. `jdk-17.0.2/bin` está dos niveles abajo)
                     if let Ok(subs) = fs::read_dir(&p) {
                         for sub in subs.flatten() {
                             let sub_p = sub.path();
@@ -253,7 +217,6 @@ pub fn find_system_java(min_major: u32) -> Option<PathBuf> {
             }
         }
     }
-    // Preferir la mayor versión compatible
     candidates.sort_by(|a, b| b.0.cmp(&a.0));
     candidates.into_iter().next().map(|(_, exe)| exe)
 }
@@ -266,8 +229,6 @@ fn major_from_path(exe: &Path) -> Option<u32> {
         .and_then(|c| c.get(1))
         .and_then(|m| m.as_str().parse().ok())
 }
-
-/// Escanea el sistema buscando Java de las majors habituales (21, 17, 11, 8).
 pub fn find_all_system_java() -> Result<Vec<JavaInfo>, String> {
     let mut found: Vec<JavaInfo> = Vec::new();
     for major in [21u32, 17, 11, 8] {
@@ -281,8 +242,6 @@ pub fn find_all_system_java() -> Result<Vec<JavaInfo>, String> {
     }
     Ok(found)
 }
-
-/// Escanea los JDK portátiles ya descargados por el launcher (runtime dir).
 pub fn find_all_bundled_java() -> Vec<JavaInfo> {
     let mut found = Vec::new();
     let root = runtime_dir();
@@ -305,10 +264,6 @@ pub fn find_all_bundled_java() -> Vec<JavaInfo> {
     }
     found
 }
-
-// ---------------------------------------------------------------------------
-// Instalación portátil de Adoptium (descarga zip, extrae sin admin)
-// ---------------------------------------------------------------------------
 fn adoptium_os() -> &'static str {
     if cfg!(target_os = "windows") {
         "windows"
@@ -334,8 +289,6 @@ struct AdoptiumPackage {
     link: String,
     name: String,
 }
-
-/// Descarga JDK de Adoptium en runtime dir (port de install_portable_jdk).
 pub async fn install_adoptium(
     major: u32,
     on_status: &mut (dyn FnMut(String) + Send),
@@ -377,12 +330,10 @@ pub async fn install_adoptium(
             .extract(&extract_dir)
             .map_err(|e| format!("extraer adoptium: {e}"))?;
     }
-    // El zip contiene un directorio principal, lo movemos a runtime/jdk-{major}
     let target_root = runtime_dir().join(format!("jdk-{major}"));
     if target_root.exists() {
         fs::remove_dir_all(&target_root).ok();
     }
-    // encontrar el subdirectorio raíz del JDK dentro del zip
     let inner_dir = fs::read_dir(&extract_dir)
         .map_err(|e| format!("leer dir extraído: {e}"))?
         .flatten()
@@ -391,7 +342,6 @@ pub async fn install_adoptium(
     fs::rename(inner_dir.path(), &target_root)
         .map_err(|e| format!("mover jdk a runtime dir: {e}"))?;
     fs::remove_dir_all(&tmp_dir).ok();
-    // Validar
     let exe = java_executable_in_dir(&target_root)
         .ok_or_else(|| "no se encontró java tras extraer Adoptium".to_string())?;
     let _actual = validate_java_executable(&exe, major)
@@ -399,8 +349,6 @@ pub async fn install_adoptium(
     on_status(format!("Java {major} listo en {}", target_root.display()));
     Ok(exe)
 }
-
-/// Resolución completa: local/bundled/system o instala Adoptium.
 pub async fn ensure_java(
     mc_version: &str,
     instance_dir: &Path,
@@ -408,14 +356,11 @@ pub async fn ensure_java(
 ) -> Result<PathBuf, String> {
     let required = resolve_java_major_online(mc_version, instance_dir).await;
     on_status(format!("Buscando Java {required}..."));
-    // bundled
     if let Some(exe) = find_bundled_java(required) {
         return Ok(exe);
     }
-    // system
     if let Some(exe) = find_system_java(required) {
         return Ok(exe);
     }
-    // Auto-install
     install_adoptium(required, on_status).await
 }
