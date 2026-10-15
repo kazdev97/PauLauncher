@@ -4,7 +4,9 @@
 //!   versions/<id>/<id>.json + <id>.jar
 //!   assets/indexes/<id>.json + assets/objects/<h1>/<h2>/<hash>
 //!   libraries/<classpath> de todas las librerías
-use crate::downloader::{download_file, get_json, get_text, http_client};
+use crate::downloader::{
+    download_file, download_file_silent, download_many_parallel, get_json, get_text, http_client,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -131,23 +133,30 @@ async fn download_asset_index(
         .ok_or("asset index sin objects")?;
     let total = objects.len().max(1);
     let mut throttle = PctThrottle::new(on_progress);
-    for (i, (_, obj)) in objects.iter().enumerate() {
+    let mut pending: Vec<(String, PathBuf)> = Vec::new();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    for (_, obj) in objects.iter() {
         let hash = obj.get("hash").and_then(|h| h.as_str()).ok_or("objeto sin hash")?.to_string();
         let sub1 = &hash[..2];
         let url = format!("https://resources.download.minecraft.net/{sub1}/{hash}");
         let dest = instance_dir.join("assets").join("objects").join(sub1).join(&hash);
-        if dest.exists() {
+        if dest.exists() || !seen.insert(dest.clone()) {
             continue;
         }
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).ok();
         }
-        let _ = download_file(&client, &url, &dest, &mut |_, _| {}).await;
-        throttle.emit(
-            12 + 28 * (i as u32) / (total as u32),
-            format!("Descargando assets... {}/{}", i + 1, total),
-        );
+        pending.push((url, dest));
     }
+    let already = total.saturating_sub(pending.len());
+    download_many_parallel(&client, pending, 16, |done| {
+        let d = already + done;
+        throttle.emit(
+            12 + 28 * d as u32 / total as u32,
+            format!("Descargando assets... {d}/{total}"),
+        );
+    })
+    .await;
     Ok(())
 }
 
@@ -172,7 +181,9 @@ fn maven_path_from_name(name: &str) -> Option<PathBuf> {
     Some(PathBuf::from(group).join(artifact).join(ver).join(format!("{artifact}-{ver}.jar")))
 }
 
-async fn download_library(client: &reqwest::Client, lib: &Value, base: &Path) -> Result<(), String> {
+/// Calcula el destino y las URLs candidatas (en orden de preferencia) de una
+/// librería. Devuelve `None` si ya existe o si no tiene ruta resoluble.
+fn library_plan(lib: &Value, base: &Path) -> Option<(PathBuf, Vec<String>)> {
     let name = lib.get("name").and_then(|n| n.as_str()).unwrap_or("");
     let artifact = lib.get("downloads").and_then(|d| d.get("artifact"));
     let url = artifact.and_then(|a| a.get("url")).and_then(|u| u.as_str()).unwrap_or("");
@@ -180,41 +191,89 @@ async fn download_library(client: &reqwest::Client, lib: &Value, base: &Path) ->
         .and_then(|a| a.get("path"))
         .and_then(|p| p.as_str())
         .map(PathBuf::from)
-        .or_else(|| maven_path_from_name(name));
-    if let Some(rel) = rel {
-        let dest = base.join(&rel);
-        if dest.exists() {
-            return Ok(());
-        }
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent).ok();
-        }
-        // Fuentes: URL explícita del json, y si no (legacy/Forge pre-1.13),
-        // la ruta Maven implícita en varios repositorios.
-        let mut sources: Vec<String> = Vec::new();
-        if !url.is_empty() {
-            sources.push(url.to_string());
-        }
-        if !name.is_empty() {
-            if let Some(rel2) = maven_path_from_name(name) {
-                let p = rel2.to_string_lossy().to_string();
-                for host in [
-                    "https://libraries.minecraft.net/",
-                    "https://repo1.maven.org/maven2/",
-                    "https://maven.minecraftforge.net/",
-                    "https://maven.neoforged.net/releases/",
-                ] {
-                    sources.push(format!("{host}{p}"));
-                }
-            }
-        }
-        for src in sources {
-            if download_file(client, &src, &dest, &mut |_, _| {}).await.is_ok() {
-                return Ok(());
+        .or_else(|| maven_path_from_name(name))?;
+    let dest = base.join(&rel);
+    if dest.exists() {
+        return None;
+    }
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    // Fuentes: URL explícita del json y, si no (legacy/Forge pre-1.13), la ruta
+    // Maven implícita en varios repositorios.
+    let mut urls: Vec<String> = Vec::new();
+    if !url.is_empty() {
+        urls.push(url.to_string());
+    }
+    if !name.is_empty() {
+        if let Some(rel2) = maven_path_from_name(name) {
+            let p = rel2.to_string_lossy().replace('\\', "/");
+            for host in [
+                "https://libraries.minecraft.net/",
+                "https://repo1.maven.org/maven2/",
+                "https://maven.minecraftforge.net/",
+                "https://maven.neoforged.net/releases/",
+            ] {
+                urls.push(format!("{host}{p}"));
             }
         }
     }
-    Ok(())
+    if urls.is_empty() {
+        None
+    } else {
+        Some((dest, urls))
+    }
+}
+
+/// Descarga una lista de librerías (planes) en paralelo, con repliegue
+/// secuencial a las URLs alternativas de las que fallen. `on_progress(done,
+/// total)` se llama por cada artefacto completado.
+async fn download_libraries(
+    client: &reqwest::Client,
+    libs: &[Value],
+    libs_dir: &Path,
+    on_progress: &mut (dyn FnMut(usize, usize) + Send),
+) {
+    let total = libs.len().max(1);
+    let mut plans: Vec<(PathBuf, Vec<String>)> = Vec::new();
+    for lib in libs {
+        if rules_allow(lib) {
+            if let Some(plan) = library_plan(lib, libs_dir) {
+                plans.push(plan);
+            }
+        }
+    }
+    let primary: Vec<(String, PathBuf)> = plans
+        .iter()
+        .map(|(dest, urls)| (urls[0].clone(), dest.clone()))
+        .collect();
+    let results = download_many_parallel(client, primary, 12, |done| {
+        on_progress(done, total);
+    })
+    .await;
+    for (idx, res) in results {
+        if res.is_err() {
+            let (dest, urls) = &plans[idx];
+            for src in urls.iter().skip(1) {
+                if download_file_silent(client, src, dest).await.is_ok() {
+                    break;
+                }
+            }
+        }
+    }
+    for lib in libs {
+        if rules_allow(lib) {
+            download_natives(client, lib, libs_dir, &natives_dir_for(libs_dir)).await;
+        }
+    }
+}
+
+/// Directorio `natives/` hermano de `libraries/`.
+fn natives_dir_for(libs_dir: &Path) -> PathBuf {
+    libs_dir
+        .parent()
+        .map(|p| p.join("natives"))
+        .unwrap_or_else(|| PathBuf::from("natives"))
 }
 
 /// Descarga y extrae las natives (p. ej. LWJGL) a natives/ desde el payload
@@ -395,25 +454,16 @@ pub async fn install_game(
         download_asset_index(instance_dir, index, &asset_id, &mut *throttle.cb).await?;
     }
 
-    // 5. Librerías vanilla (40..70)
+    // 5. Librerías vanilla (40..70) en paralelo
     if let Some(libs) = current.get("libraries").and_then(|l| l.as_array()) {
-        let n = libs.len().max(1);
-        for (i, lib) in libs.iter().enumerate() {
-            if rules_allow(lib) {
-                let _ = download_library(&client, lib, &instance_dir.join("libraries")).await;
-                download_natives(
-                    &client,
-                    lib,
-                    &instance_dir.join("libraries"),
-                    &instance_dir.join("natives"),
-                )
-                .await;
-            }
+        let libs_dir = instance_dir.join("libraries");
+        download_libraries(&client, libs, &libs_dir, &mut |done, total| {
             throttle.emit(
-                40 + 30 * (i as u32) / (n as u32),
-                format!("Descargando librerías... {}/{}", i + 1, n),
+                40 + 30 * done as u32 / total as u32,
+                format!("Descargando librerías... {done}/{total}"),
             );
-        }
+        })
+        .await;
     }
     throttle.emit(70, "Juego base instalado".to_string());
     Ok(format!("{game_version}.json"))
@@ -688,23 +738,14 @@ async fn install_simple_installer(
         .map_err(|e| format!("guardar perfil {label}: {e}"))?;
 
     if let Some(libs) = profile.get("libraries").and_then(|l| l.as_array()) {
-        let n = libs.len().max(1);
-        for (i, lib) in libs.iter().enumerate() {
-            if rules_allow(lib) {
-                let _ = download_library(&client, lib, &instance_dir.join("libraries")).await;
-                download_natives(
-                    &client,
-                    lib,
-                    &instance_dir.join("libraries"),
-                    &instance_dir.join("natives"),
-                )
-                .await;
-            }
+        let libs_dir = instance_dir.join("libraries");
+        download_libraries(&client, libs, &libs_dir, &mut |done, total| {
             throttle.emit(
-                72 + 13 * (i as u32) / (n as u32),
-                format!("Descargando librerías de {label}... {}/{}", i + 1, n),
+                72 + 13 * done as u32 / total as u32,
+                format!("Descargando librerías de {label}... {done}/{total}"),
             );
-        }
+        })
+        .await;
     }
 
     // 4. Generar los jars de runtime (client-srg/extra/client.jar) en los

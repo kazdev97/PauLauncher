@@ -9,7 +9,7 @@
 //! Port y generalización de core/instance_sync.py + core/remote_url.py de KazLauncher.
 
 use crate::config::instances_dir;
-use crate::downloader::{download_file, sha256_file, http_client};
+use crate::downloader::{download_file, download_file_silent, sha256_file, http_client};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -1156,44 +1156,58 @@ pub async fn git_apply_dir(
     let mut errors = Vec::new();
     let client = http_client();
 
-    // 2. Descargar (nuevos y cambiados) -> bloque 85..99 por archivo
-    let total_dl = (pend.missing.len() + pend.different.len()).max(1);
-    let mut done = 0usize;
-    for rel in pend.missing.iter().chain(pend.different.iter()) {
-        if is_git_protected(rel, &protected) || rel.starts_with('.') {
-            continue;
-        }
-        let dest = instance_dir.join(rel);
-        let is_replace = dest.exists();
-        let url = sync_raw_url(&ctx, rel);
-        done += 1;
-        on_progress(
-            85 + 14 * (done as u32) / (total_dl as u32),
-            format!("Descargando pack {done}/{total_dl}"),
-        );
-        on_status(format!("Descargando {rel}..."));
-        match crate::downloader::download_file(&client, &url, &dest, &mut |_, _| {}).await {
-            Ok(()) => {
-                if is_lfs_pointer(&dest) {
-                    // raw devuelve el puntero Git LFS: bajar el contenido real de media.
-                    let media = lfs_media_url(&ctx, rel);
-                    match crate::downloader::download_file(&client, &media, &dest, &mut |_, _| {}).await {
-                        Ok(()) => {
-                            if is_replace {
-                                replaced.push(rel.clone())
-                            } else {
-                                downloaded.push(rel.clone())
-                            }
-                        }
-                        Err(e) => errors.push(format!("{rel}: {e}")),
-                    }
-                } else if is_replace {
-                    replaced.push(rel.clone())
-                } else {
-                    downloaded.push(rel.clone())
-                }
+    // 2. Descargar (nuevos y cambiados) en paralelo -> bloque 85..99 por archivo
+    {
+        use futures_util::stream::{self, StreamExt};
+        let inst = instance_dir.to_path_buf();
+        let shared_client = client.clone();
+        let shared_ctx = ctx.clone();
+        let mut to_download: Vec<String> = Vec::new();
+        for rel in pend.missing.iter().chain(pend.different.iter()) {
+            if is_git_protected(rel, &protected) || rel.starts_with('.') {
+                continue;
             }
-            Err(e) => errors.push(format!("{rel}: {e}")),
+            to_download.push(rel.clone());
+        }
+        let total_dl = to_download.len().max(1);
+        let mut done = 0usize;
+        let mut stream = stream::iter(to_download.into_iter())
+            .map(|rel| {
+                let client = shared_client.clone();
+                let ctx = shared_ctx.clone();
+                let inst = inst.clone();
+                async move {
+                    let dest = inst.join(&rel);
+                    let existed = dest.exists();
+                    let url = sync_raw_url(&ctx, &rel);
+                    let mut result =
+                        download_file_silent(&client, &url, &dest).await;
+                    if result.is_ok() && is_lfs_pointer(&dest) {
+                        // raw devuelve el puntero Git LFS: bajar el contenido real de media.
+                        let media = lfs_media_url(&ctx, &rel);
+                        result = download_file_silent(&client, &media, &dest).await;
+                    }
+                    (rel, existed, result)
+                }
+            })
+            .buffer_unordered(8);
+        while let Some((rel, existed, result)) = stream.next().await {
+            done += 1;
+            on_progress(
+                85 + 14 * (done as u32) / (total_dl as u32),
+                format!("Descargando pack {done}/{total_dl}"),
+            );
+            on_status(format!("Descargando {rel}..."));
+            match result {
+                Ok(()) => {
+                    if existed {
+                        replaced.push(rel)
+                    } else {
+                        downloaded.push(rel)
+                    }
+                }
+                Err(e) => errors.push(format!("{rel}: {e}")),
+            }
         }
     }
 

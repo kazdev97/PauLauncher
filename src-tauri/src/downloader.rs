@@ -9,6 +9,10 @@ use std::time::Duration;
 
 pub const USER_AGENT_STRING: &str = "PauLauncher/0.1";
 
+/// Secuencia para nombres de archivos temporales únicos (evita colisiones
+/// entre descargas concurrentes al mismo destino).
+static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub fn http_client() -> Client {
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, USER_AGENT_STRING.parse().unwrap());
@@ -43,6 +47,53 @@ pub async fn download_file(
     Err(last_err.unwrap_or_else(|| "descarga fallida".to_string()))
 }
 
+/// Descarga sin callback de progreso (para lotes masivos en paralelo).
+pub async fn download_file_silent(
+    client: &Client,
+    url: &str,
+    dest: &std::path::Path,
+) -> Result<(), String> {
+    let mut noop = |_: u64, _: u64| {};
+    download_file(client, url, dest, &mut noop).await
+}
+
+/// Descarga en paralelo una lista de (url, destino) con un máximo de `limit`
+/// conexiones simultáneas. Devuelve `(índice_original, resultado)` de cada
+/// elemento y llama a `on_done(completados)` tras cada descarga terminada.
+pub async fn download_many_parallel(
+    client: &Client,
+    items: Vec<(String, std::path::PathBuf)>,
+    limit: usize,
+    mut on_done: impl FnMut(usize) + Send,
+) -> Vec<(usize, Result<(), String>)> {
+    use futures_util::stream::{self, StreamExt};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    if items.is_empty() {
+        return Vec::new();
+    }
+    let shared = client.clone();
+    let counter = Arc::new(AtomicUsize::new(0));
+    let mut out: Vec<(usize, Result<(), String>)> = Vec::with_capacity(items.len());
+    let mut stream = stream::iter(items.into_iter().enumerate())
+        .map(|(idx, (url, dest))| {
+            let c = shared.clone();
+            let counter = counter.clone();
+            async move {
+                let r = download_file_silent(&c, &url, &dest).await;
+                let done = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                (idx, done, r)
+            }
+        })
+        .buffer_unordered(limit.max(1));
+    while let Some((idx, done, r)) = stream.next().await {
+        on_done(done);
+        out.push((idx, r));
+    }
+    out
+}
+
 async fn download_one(
     client: &Client,
     url: &str,
@@ -53,9 +104,11 @@ async fn download_one(
         std::fs::create_dir_all(parent).map_err(|e| format!("crear dir {e}"))?;
     }
     // archivo temporal y luego rename (para no dejar archivos corruptos)
+    let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let tmp = dest.with_extension(format!(
-        "tmp{}",
-        std::process::id()
+        "tmp{}_{}",
+        std::process::id(),
+        seq
     ));
     let resp = client
         .get(url)

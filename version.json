@@ -1,5 +1,5 @@
 {
-  "version": "0.1.2",
-  "notes": "Arregla la instalación de Forge: la validación ya no falla por buscar los jars en el nivel equivocado.",
+  "version": "0.1.3",
+  "notes": "Instalacion y actualizacion mucho mas rapidas: assets del juego, librerias y modpack se descargan en paralelo.",
   "url": "https://raw.githubusercontent.com/kazdev97/PauLauncher/main/builds/paulauncher.exe"
 }
