@@ -279,6 +279,32 @@ fn extract_zip_to(jar: &Path, dest: &Path) {
     }
 }
 
+/// Busca recursivamente dentro de `dir` un archivo cuyo nombre termine en
+/// `suffix`. Se usa para validar que un instalador generó sus jars de runtime
+/// sin depender de la profundidad exacta de las rutas de versión de maven
+/// (los jars quedan en `.../<group>/<artifact>/<version>/`).
+fn find_file_ending(dir: &Path, suffix: &str) -> bool {
+    let Ok(rd) = fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if find_file_ending(&path, suffix) {
+                return true;
+            }
+        } else if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.ends_with(suffix))
+            .unwrap_or(false)
+        {
+            return true;
+        }
+    }
+    false
+}
+
 /// Instala el juego vanilla (json + client jar + assets + librerías).
 pub async fn install_game(
     instance_dir: &Path,
@@ -736,38 +762,21 @@ async fn install_simple_installer(
     // 5. Comprobar que se generaron los artefactos de runtime. Los modernos
     //    crean client-*-srg.jar (necesario para el módulo de launcher); los
     //    legacy dejan el jar universal/client del loader.
-    let srg_ok = fs::read_dir(
-        instance_dir.join("libraries").join("net").join("minecraft").join("client"),
-    )
-    .map(|rd| {
-        rd.flatten().any(|e| {
-            e.path()
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|n| n.ends_with("-srg.jar"))
-                .unwrap_or(false)
-        })
-    })
-    .unwrap_or(false);
-    let mut loader_jar_ok = false;
-    for base in ["net/minecraftforge/forge", "net/neoforged/forge", "net/neoforged/neoforge"] {
-        if loader_jar_ok {
-            break;
-        }
-        loader_jar_ok = fs::read_dir(instance_dir.join("libraries").join(base)).map(|rd| {
-            rd.flatten().any(|e| {
-                let p = e.path();
-                if !p.is_file() {
-                    return false;
-                }
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|n| n.ends_with("-universal.jar") || n.ends_with("-client.jar"))
-                    .unwrap_or(false)
-            })
-        })
-        .unwrap_or(false);
-    }
+    let libs_dir = instance_dir.join("libraries");
+    let srg_ok = find_file_ending(
+        &libs_dir.join("net").join("minecraft").join("client"),
+        "-srg.jar",
+    );
+    let loader_jar_ok = [
+        "net/minecraftforge/forge",
+        "net/neoforged/forge",
+        "net/neoforged/neoforge",
+    ]
+    .iter()
+    .any(|base| {
+        let dir = libs_dir.join(base);
+        find_file_ending(&dir, "-universal.jar") || find_file_ending(&dir, "-client.jar")
+    });
     if !srg_ok && !loader_jar_ok {
         return Err(format!(
             "El instalador de {label} terminó pero no generó los jars de runtime (srg/universal/client)."

@@ -1,5 +1,5 @@
 {
-  "version": "0.1.1",
-  "notes": "Sesión: renueva token al lanzar, relogin, consola y RAM 6-8 GB.",
+  "version": "0.1.2",
+  "notes": "Arregla la instalación de Forge: la validación ya no falla por buscar los jars en el nivel equivocado.",
   "url": "https://raw.githubusercontent.com/kazdev97/PauLauncher/main/builds/paulauncher.exe"
 }
