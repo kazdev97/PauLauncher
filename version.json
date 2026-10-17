@@ -1,5 +1,5 @@
 {
-  "version": "0.1.7",
-  "notes": "Ya no borra tus texture packs, shaders ni configs al actualizar: solo elimina mods sobrantes.",
+  "version": "0.1.8",
+  "notes": "El launcher ya no toca la carpeta 'local' (datos de Crash Assistant y otros ficheros de ejecucion): no los descarga ni los elimina.",
   "url": "https://raw.githubusercontent.com/kazdev97/PauLauncher/main/builds/paulauncher.exe"
 }

@@ -54,6 +54,7 @@ pub fn default_protected() -> Vec<String> {
     vec![
         "saves".to_string(),
         "logs".to_string(),
+        "local".to_string(),
         "versions".to_string(),
         "libraries".to_string(),
         "assets".to_string(),
