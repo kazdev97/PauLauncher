@@ -1141,10 +1141,15 @@ fn local_surplus(
     protected: &HashSet<String>,
 ) -> Vec<String> {
     let mut out = Vec::new();
+    // Solo se eliminan sobrantes en carpetas cuyo contenido pertenece al pack.
+    // El resto (config, local, resourcepacks, shaderpacks, server-resource-packs,
+    // tacz, emotes, fancymenu_data...) puede contener datos del usuario o ficheros
+    // generados por el juego y NUNCA se borra.
+    let allowed: HashSet<&str> = ["mods"].into_iter().collect();
     let tops: HashSet<&str> = head_set
         .iter()
         .filter_map(|r| r.split_once('/').map(|(t, _)| t))
-        .filter(|t| !protected.contains(*t))
+        .filter(|t| !protected.contains(*t) && allowed.contains(*t))
         .collect();
     for top in tops {
         walk_surplus(&instance_dir.join(top), instance_dir, head_set, protected, &mut out);

@@ -1,5 +1,5 @@
 {
-  "version": "0.1.6",
-  "notes": "Arregla la carga de assets al lanzar: usaba el nombre de la version como indice de assets (en vez del indice real, p.ej. 5) y rompia idiomas (lista vacia) y sonidos faltantes.",
+  "version": "0.1.7",
+  "notes": "Ya no borra tus texture packs, shaders ni configs al actualizar: solo elimina mods sobrantes.",
   "url": "https://raw.githubusercontent.com/kazdev97/PauLauncher/main/builds/paulauncher.exe"
 }
