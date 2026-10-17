@@ -1,5 +1,5 @@
 {
-  "version": "0.1.5",
-  "notes": "Al actualizar el modpack ahora tambien elimina los mods y archivos sobrantes que ya no forman parte del pack.",
+  "version": "0.1.6",
+  "notes": "Arregla la carga de assets al lanzar: usaba el nombre de la version como indice de assets (en vez del indice real, p.ej. 5) y rompia idiomas (lista vacia) y sonidos faltantes.",
   "url": "https://raw.githubusercontent.com/kazdev97/PauLauncher/main/builds/paulauncher.exe"
 }

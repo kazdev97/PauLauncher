@@ -37,6 +37,7 @@ struct LibraryEntry {
 #[derive(Debug, Clone, Default)]
 struct ResolvedVersion {
     id: String,
+    assets: String,
     main_class: String,
     libraries: Vec<LibraryEntry>,
     jvm_args: Vec<String>,
@@ -244,6 +245,17 @@ fn resolve_version(instance_dir: &Path, version_id: &str) -> Result<ResolvedVers
             }
         }
     }
+    // Id del índice de assets efectivo (campo "assets"). Se hereda: el hijo
+    // (Forge/NeoForge) no lo define, así que se toma del padre vanilla (p.ej. "5").
+    let mut assets = String::new();
+    for json in chain.iter() {
+        if let Some(a) = json.get("assets").and_then(|a| a.as_str()) {
+            if !a.is_empty() {
+                assets = a.to_string();
+                break;
+            }
+        }
+    }
     let versions_dir = instance_dir.join("versions");
     // JAR del juego base (vanilla), el que descarga install_game.
     if let Some(base) = chain.last() {
@@ -269,6 +281,7 @@ fn resolve_version(instance_dir: &Path, version_id: &str) -> Result<ResolvedVers
 
     Ok(ResolvedVersion {
         id: version_id.to_string(),
+        assets,
         main_class,
         libraries,
         jvm_args,
@@ -371,6 +384,15 @@ fn build_launch_command(
     let natives_dir = instance_dir.join("natives").to_string_lossy().to_string();
     let libraries_dir = instance_dir.join("libraries").to_string_lossy().to_string();
 
+    // Id real del índice de assets (p.ej. "5"), no el nombre de la versión:
+    // usar game_version ("1.20.1") como assetIndex rompía la carga de assets
+    // (idiomas vacíos, sin sonidos). resolved.assets ya resuelve la herencia.
+    let assets_index = if resolved.assets.is_empty() {
+        meta.game_version.clone()
+    } else {
+        resolved.assets.clone()
+    };
+
     // Expande TODOS los placeholders, también en los args JVM del JSON
     // (Forge usa ${library_directory}/${classpath}/${classpath_separator} en -p y
     // en -DlegacyClassPath; sin expandirlos el módulo no resuelve y la JVM aborta).
@@ -404,7 +426,7 @@ fn build_launch_command(
         );
         *arg = arg.replace("${library_directory}", &libraries_dir);
         // placeholders del game (el launcher oficial los sustituye/omite)
-        *arg = arg.replace("${assets_index_name}", &meta.game_version);
+        *arg = arg.replace("${assets_index_name}", &assets_index);
         *arg = arg.replace("${clientid}", "PauLauncher");
         *arg = arg.replace("${auth_xuid}", "");
         *arg = arg.replace("${resolution_width}", "1280");
