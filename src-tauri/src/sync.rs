@@ -1113,6 +1113,14 @@ async fn git_pending(
         }
     }
 
+    // Ficheros locales sobrantes dentro de carpetas gestionadas por la repo
+    // (p. ej. mods que el owner ya no distribuye pero siguen en la instancia).
+    for rel in local_surplus(instance_dir, &head_set, &protected) {
+        if !extra.iter().any(|e| e == &rel) {
+            extra.push(rel);
+        }
+    }
+
     missing.sort();
     different.sort();
     extra.sort();
@@ -1122,6 +1130,55 @@ async fn git_pending(
 fn is_git_protected(rel: &str, protected: &HashSet<String>) -> bool {
     let top = rel.split('/').next().unwrap_or("");
     protected.contains(rel) || protected.contains(top)
+}
+
+/// Ficheros locales que están dentro de una carpeta gestionada por la repo
+/// (mods, config, emotes, etc.) pero que ya no forman parte del HEAD. Son
+/// sobrantes que el owner eliminó del pack y deben quitarse de la instancia.
+fn local_surplus(
+    instance_dir: &Path,
+    head_set: &HashSet<&str>,
+    protected: &HashSet<String>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let tops: HashSet<&str> = head_set
+        .iter()
+        .filter_map(|r| r.split_once('/').map(|(t, _)| t))
+        .filter(|t| !protected.contains(*t))
+        .collect();
+    for top in tops {
+        walk_surplus(&instance_dir.join(top), instance_dir, head_set, protected, &mut out);
+    }
+    out
+}
+
+fn walk_surplus(
+    dir: &Path,
+    root: &Path,
+    head_set: &HashSet<&str>,
+    protected: &HashSet<String>,
+    out: &mut Vec<String>,
+) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_dir() {
+            walk_surplus(&path, root, head_set, protected, out);
+        } else if ft.is_file() {
+            let Ok(stripped) = path.strip_prefix(root) else { continue };
+            let rel = stripped.to_string_lossy().replace('\\', "/");
+            if rel.starts_with('.') {
+                continue;
+            }
+            if is_git_protected(&rel, protected) {
+                continue;
+            }
+            if !head_set.contains(rel.as_str()) {
+                out.push(rel);
+            }
+        }
+    }
 }
 
 /// Check (sin aplicar nada) para instancias de repositorio.
@@ -1258,13 +1315,12 @@ pub async fn git_apply_dir(
         }
     }
 
-    // 3. Eliminar los que el owner quitó de la repo
+    // 3. Eliminar los que el owner quitó de la repo y los sobrantes locales
+    //    (cualquier fichero dentro de carpetas gestionadas que ya no esté en el
+    //    HEAD). Se hizo backup de la carpeta afectada en el paso 1.
     let tracked: Vec<String> = meta.github_tracked.clone();
     for rel in &pend.extra {
         if is_git_protected(rel, &protected) {
-            continue;
-        }
-        if !tracked.is_empty() && !tracked.iter().any(|t| t == rel) {
             continue;
         }
         let dest = instance_dir.join(rel);

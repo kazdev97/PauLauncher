@@ -1,5 +1,5 @@
 {
-  "version": "0.1.4",
-  "notes": "Arregla la actualizacion del modpack: ahora compara el arbol completo del repositorio (antes se limitaba a 300 archivos y dejaba sin descargar emotes, fancymenu y parte de los mods).",
+  "version": "0.1.5",
+  "notes": "Al actualizar el modpack ahora tambien elimina los mods y archivos sobrantes que ya no forman parte del pack.",
   "url": "https://raw.githubusercontent.com/kazdev97/PauLauncher/main/builds/paulauncher.exe"
 }
