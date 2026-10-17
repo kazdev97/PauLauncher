@@ -93,15 +93,16 @@ async fn java_get_required(game_version: String) -> u32 {
 
 #[tauri::command]
 async fn java_find(major_version: u32) -> Result<java::JavaInfo, String> {
-    if let Some(exe) = java::find_system_java(major_version) {
-        let major = java::validate_java_executable(&exe, major_version).unwrap_or(major_version);
-        return Ok(java::JavaInfo { path: exe.to_string_lossy().to_string(), major, is_valid: true });
-    }
+    // Preferir portátil (exacta) antes que sistema; y exigir EXACTA para evitar 26 en 1.20.1
     if let Some(exe) = java::find_bundled_java(major_version) {
         let major = java::validate_java_executable(&exe, major_version).unwrap_or(major_version);
         return Ok(java::JavaInfo { path: exe.to_string_lossy().to_string(), major, is_valid: true });
     }
-    Err(format!("No hay un Java {major_version}+ disponible"))
+    if let Some(exe) = java::find_system_java_exact(major_version) {
+        let major = java::validate_java_executable(&exe, major_version).unwrap_or(major_version);
+        return Ok(java::JavaInfo { path: exe.to_string_lossy().to_string(), major, is_valid: true });
+    }
+    Err(format!("No hay un Java {major_version} disponible"))
 }
 
 #[tauri::command]

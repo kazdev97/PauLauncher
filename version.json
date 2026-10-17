@@ -1,5 +1,5 @@
 {
-  "version": "0.1.8",
-  "notes": "El launcher ya no toca la carpeta 'local' (datos de Crash Assistant y otros ficheros de ejecucion): no los descarga ni los elimina.",
+  "version": "0.1.9",
+  "notes": "Arregla la selección de Java: no usa Java más nuevo del requerido (evita Java 26 en MC 1.20.1/Forge).",
   "url": "https://raw.githubusercontent.com/kazdev97/PauLauncher/main/builds/paulauncher.exe"
 }

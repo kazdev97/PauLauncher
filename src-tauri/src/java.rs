@@ -221,8 +221,9 @@ pub fn find_bundled_java(major: u32) -> Option<PathBuf> {
     None
 }
 
-/// Escanea directorios estándar buscando Java >= min_major.
-pub fn find_system_java(min_major: u32) -> Option<PathBuf> {
+/// Escanea los directorios estándar y devuelve todos los Java encontrados con
+/// la major REAL detectada (siempre que sea >= min_major).
+fn collect_system_java(min_major: u32) -> Vec<(u32, PathBuf)> {
     let mut candidates = Vec::new();
     for base in extra_search_directories() {
         // Glob jdk-*
@@ -231,8 +232,8 @@ pub fn find_system_java(min_major: u32) -> Option<PathBuf> {
                 let p = entry.path();
                 if p.is_dir() {
                     if let Some(exe) = java_executable_in_dir(&p) {
-                        if validate_java_executable(&exe, min_major).is_ok() {
-                            candidates.push((major_from_path(&exe).unwrap_or(0), exe));
+                        if let Ok(actual) = validate_java_executable(&exe, min_major) {
+                            candidates.push((actual, exe));
                         }
                     }
                     // Sub-carpetas (e.g. `jdk-17.0.2/bin` está dos niveles abajo)
@@ -241,9 +242,8 @@ pub fn find_system_java(min_major: u32) -> Option<PathBuf> {
                             let sub_p = sub.path();
                             if sub_p.is_dir() {
                                 if let Some(exe) = java_executable_in_dir(&sub_p) {
-                                    if validate_java_executable(&exe, min_major).is_ok() {
-                                        candidates
-                                            .push((major_from_path(&exe).unwrap_or(0), exe));
+                                    if let Ok(actual) = validate_java_executable(&exe, min_major) {
+                                        candidates.push((actual, exe));
                                     }
                                 }
                             }
@@ -253,7 +253,22 @@ pub fn find_system_java(min_major: u32) -> Option<PathBuf> {
             }
         }
     }
+    candidates
+}
+
+/// Escanea directorios estándar buscando Java >= min_major (prefiere el más nuevo).
+pub fn find_system_java(min_major: u32) -> Option<PathBuf> {
+    let mut candidates = collect_system_java(min_major);
     // Preferir la mayor versión compatible
+    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    candidates.into_iter().next().map(|(_, exe)| exe)
+}
+
+/// Busca un Java del sistema con la major EXACTA. No acepta versiones más nuevas:
+/// un Java demasiado nuevo rompe Forge/Mixin en versiones antiguas de Minecraft.
+pub fn find_system_java_exact(major: u32) -> Option<PathBuf> {
+    let mut candidates = collect_system_java(major);
+    candidates.retain(|(m, _)| *m == major);
     candidates.sort_by(|a, b| b.0.cmp(&a.0));
     candidates.into_iter().next().map(|(_, exe)| exe)
 }
@@ -270,15 +285,17 @@ fn major_from_path(exe: &Path) -> Option<u32> {
 /// Escanea el sistema buscando Java de las majors habituales (21, 17, 11, 8).
 pub fn find_all_system_java() -> Result<Vec<JavaInfo>, String> {
     let mut found: Vec<JavaInfo> = Vec::new();
-    for major in [21u32, 17, 11, 8] {
-        if let Some(exe) = find_system_java(major) {
-            let actual = validate_java_executable(&exe, major).unwrap_or(major);
-            let path = exe.to_string_lossy().to_string();
-            if !found.iter().any(|j| j.path == path) {
-                found.push(JavaInfo { path, major: actual, is_valid: true });
-            }
+    for (major, exe) in collect_system_java(8) {
+        let path = exe.to_string_lossy().to_string();
+        if !found.iter().any(|j| j.path == path) {
+            found.push(JavaInfo {
+                path,
+                major,
+                is_valid: true,
+            });
         }
     }
+    found.sort_by(|a, b| b.major.cmp(&a.major));
     Ok(found)
 }
 
@@ -412,8 +429,8 @@ pub async fn ensure_java(
     if let Some(exe) = find_bundled_java(required) {
         return Ok(exe);
     }
-    // system
-    if let Some(exe) = find_system_java(required) {
+    // system: usar EXACTA (no aceptar Java demasiado nuevo)
+    if let Some(exe) = find_system_java_exact(required) {
         return Ok(exe);
     }
     // Auto-install
