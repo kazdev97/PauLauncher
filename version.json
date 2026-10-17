@@ -1,5 +1,5 @@
 {
-  "version": "0.1.3",
-  "notes": "Instalacion y actualizacion mucho mas rapidas: assets del juego, librerias y modpack se descargan en paralelo.",
+  "version": "0.1.4",
+  "notes": "Arregla la actualizacion del modpack: ahora compara el arbol completo del repositorio (antes se limitaba a 300 archivos y dejaba sin descargar emotes, fancymenu y parte de los mods).",
   "url": "https://raw.githubusercontent.com/kazdev97/PauLauncher/main/builds/paulauncher.exe"
 }

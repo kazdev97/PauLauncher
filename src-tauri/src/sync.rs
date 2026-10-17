@@ -11,7 +11,7 @@
 use crate::config::instances_dir;
 use crate::downloader::{download_file, download_file_silent, sha256_file, http_client};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -964,11 +964,12 @@ async fn git_head_sha(ctx: &GitCtx) -> Result<String, String> {
         .ok_or_else(|| "respuesta de rama inválida".to_string())
 }
 
-/// Lista (path_rel, sha, size) de los blobs del repo bajo github_path.
-async fn git_tree(ctx: &GitCtx) -> Result<Vec<(String, String, u64)>, String> {
+/// Lista (path_rel, sha, size) de los blobs de un árbol/commit arbitrario
+/// (tree-ish: nombre de rama o SHA de commit) bajo github_path.
+async fn git_tree_at(ctx: &GitCtx, treeish: &str) -> Result<Vec<(String, String, u64)>, String> {
     let url = format!(
         "https://api.github.com/repos/{}/git/trees/{}?recursive=1",
-        ctx.repo, ctx.branch
+        ctx.repo, treeish
     );
     let v = git_api_get(&url).await.map_err(|e| format!("leer árbol: {e}"))?;
     let mut out = Vec::new();
@@ -985,6 +986,11 @@ async fn git_tree(ctx: &GitCtx) -> Result<Vec<(String, String, u64)>, String> {
         ));
     }
     Ok(out)
+}
+
+/// Lista (path_rel, sha, size) de los blobs del HEAD de la rama.
+async fn git_tree(ctx: &GitCtx) -> Result<Vec<(String, String, u64)>, String> {
+    git_tree_at(ctx, &ctx.branch).await
 }
 
 #[derive(Debug, Clone)]
@@ -1008,64 +1014,105 @@ fn git_rev_display(head: &str, message: &str) -> String {
     }
 }
 
-/// Calcula qué falta o cambió comparando el última HEAD aplicado con el actual.
+/// Calcula qué falta o cambió comparando el árbol del último HEAD aplicado
+/// (base) con el del HEAD actual, usando los SHA de cada blob. NO usa el
+/// Compare API (su lista de ficheros está limitada a 300 y dejaba sin bajar las
+/// versiones con muchos cambios). Además reintenta ficheros que ya estaban en el
+/// base pero faltan en disco.
 async fn git_pending(
     ctx: &GitCtx,
     meta: &crate::instances::InstanceMeta,
     instance_dir: &Path,
 ) -> Result<GitPending, String> {
     let head = git_head_sha(ctx).await?;
-    let base = meta.github_base_sha.trim();
+    let base = meta.github_base_sha.trim().to_string();
+    let protected = default_protected().into_iter().collect::<HashSet<_>>();
     let mut missing = Vec::new();
     let mut different = Vec::new();
     let mut extra = Vec::new();
     let mut message = String::new();
 
-    if !base.is_empty() && base == head {
-        return Ok(GitPending { head, message, missing, different, extra });
-    }
+    let head_tree = git_tree(ctx).await?;
 
     if base.is_empty() {
         // Primera vez: todo lo de la repo es nuevo.
-        for (rel, _, _) in git_tree(ctx).await? {
-            missing.push(rel);
+        for (rel, _, _) in &head_tree {
+            if !is_git_protected(rel, &protected) {
+                missing.push(rel.clone());
+            }
         }
+        missing.sort();
         return Ok(GitPending { head, message, missing, different, extra });
     }
 
-    // Comparar los commits entre base y head.
-    let url = format!(
-        "https://api.github.com/repos/{}/compare/{}...{}",
-        ctx.repo, base, head
-    );
-    let compare = git_api_get(&url).await;
-    match compare {
-        Ok(v) => {
-            if let Some(commits) = v["commits"].as_array() {
-                if let Some(last) = commits.last() {
-                    message = last["commit"]["message"].as_str().unwrap_or("").to_string();
-                }
-            }
-            for f in v["files"].as_array().cloned().unwrap_or_default() {
-                let full = f["filename"].as_str().unwrap_or("");
-                let Some(rel) = strip_sync_prefix(full, &ctx.path) else { continue };
-                let status = f["status"].as_str().unwrap_or("");
-                match status {
-                    "removed" => extra.push(rel),
-                    _ => {
-                        let local = instance_dir.join(&rel).exists();
-                        if local { different.push(rel) } else { missing.push(rel) }
+    let base_tree: Vec<(String, String, u64)> = if base == head {
+        head_tree.clone()
+    } else {
+        match git_tree_at(ctx, &base).await {
+            Ok(t) => t,
+            Err(_) => {
+                // base ya no existe (force-push): re-descargar todo.
+                for (rel, _, _) in &head_tree {
+                    if !is_git_protected(rel, &protected) {
+                        missing.push(rel.clone());
                     }
                 }
+                missing.sort();
+                return Ok(GitPending { head, message, missing, different, extra });
             }
         }
-        Err(_) => {
-            // base ya no existe (fuerce-push): re-descargar todo para volver a cuajar.
-            for (rel, _, _) in git_tree(ctx).await? {
-                missing.push(rel);
+    };
+
+    if base != head {
+        // Nota del último cambio (mejor esfuerzo).
+        let url = format!("https://api.github.com/repos/{}/commits/{}", ctx.repo, head);
+        if let Ok(v) = git_api_get(&url).await {
+            if let Some(m) = v["commit"]["message"].as_str() {
+                message = m.to_string();
             }
         }
     }
+
+    let base_map: HashMap<&str, &str> = base_tree
+        .iter()
+        .map(|(r, s, _)| (r.as_str(), s.as_str()))
+        .collect();
+
+    for (rel, sha, _) in &head_tree {
+        if is_git_protected(rel, &protected) {
+            continue;
+        }
+        let local = instance_dir.join(rel).exists();
+        match base_map.get(rel.as_str()) {
+            // Igual que en el base aplicado: solo si falta en disco.
+            Some(bsha) if *bsha == sha.as_str() => {
+                if !local {
+                    missing.push(rel.clone());
+                }
+            }
+            // Cambió respecto al base aplicado.
+            Some(_) => different.push(rel.clone()),
+            // Fichero nuevo en este head.
+            None => {
+                if local {
+                    different.push(rel.clone());
+                } else {
+                    missing.push(rel.clone());
+                }
+            }
+        }
+    }
+
+    let head_set: HashSet<&str> = head_tree.iter().map(|(r, _, _)| r.as_str()).collect();
+    for (rel, _, _) in &base_tree {
+        if is_git_protected(rel, &protected) {
+            continue;
+        }
+        if !head_set.contains(rel.as_str()) {
+            extra.push(rel.clone());
+        }
+    }
+
     missing.sort();
     different.sort();
     extra.sort();
